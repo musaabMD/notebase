@@ -35,10 +35,13 @@ export const metadata = {
 };
 
 export default function RootLayout({ children }) {
+  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL ?? "";
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body className={geistSans.className}>
-        <ConvexClientProvider>{children}</ConvexClientProvider>
+        <ConvexClientProvider deploymentUrl={convexUrl}>
+          {children}
+        </ConvexClientProvider>
         <RegisterServiceWorker />
       </body>
     </html>

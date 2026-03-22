@@ -22,6 +22,9 @@ import {
   formatVoiceModelIdForUi,
 } from "./voice-openrouter";
 import dynamic from "next/dynamic";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "../convex/_generated/api";
+import { useConvexDeploymentUrl } from "./convex-client-provider";
 
 const themeUi = {
   grid: {
@@ -129,6 +132,50 @@ const excerptAroundMatch = (content, q, before = 48, after = 120) => {
   const suffix = end < content.length ? "…" : "";
   return prefix + content.slice(start, end) + suffix;
 };
+
+function mapConvexNoteToClient(doc) {
+  return {
+    id: doc._id,
+    tag: doc.tag,
+    title: doc.title,
+    content: doc.content,
+    createdAt: new Date(doc.createdAt),
+    pinned: doc.pinned,
+    attachments: (doc.attachments ?? []).map((a) => ({
+      id: a.id,
+      kind: a.kind,
+      name: a.name,
+      mime: a.mime,
+      storageId: a.storageId,
+      url: a.url,
+      dataUrl: a.url ?? a.dataUrl,
+    })),
+    contentHistory: doc.contentHistory ?? [],
+  };
+}
+
+function attachmentsForConvex(list) {
+  return (list ?? [])
+    .filter((a) => a.storageId)
+    .map((a) => ({
+      id: a.id,
+      kind: a.kind,
+      name: a.name,
+      mime: a.mime,
+      storageId: a.storageId,
+    }));
+}
+
+async function uploadFileToConvexStorage(file, getUploadUrl) {
+  const postUrl = await getUploadUrl();
+  const res = await fetch(postUrl, {
+    method: "POST",
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  if (!res.ok) throw new Error("Upload failed");
+  return (await res.text()).trim();
+}
 
 const MAX_ATTACHMENT_BYTES = 6 * 1024 * 1024;
 
@@ -635,65 +682,7 @@ function stubAIResult(note, cmdId) {
   }
 }
 
-const SEED = [
-  {
-    id: 1,
-    tag: "ideas",
-    title: "Ambient computing",
-    content:
-      "What if screens dissolved into surfaces?\n\nEvery wall, every table becomes a canvas. The device disappears — only the interaction remains.\n\nThink about spatial computing taken to its logical extreme.",
-    createdAt: new Date(Date.now() - 3600000),
-  },
-  {
-    id: 2,
-    tag: "journal",
-    title: "Morning light",
-    content:
-      "There's something about diffused morning light that makes everything feel provisional, temporary.\n\nLike the world is still deciding what it wants to be.",
-    createdAt: new Date(Date.now() - 86400000),
-  },
-  {
-    id: 3,
-    tag: "work",
-    title: "Q2 strategy",
-    content:
-      "Focus on retention over acquisition.\n\nThe funnel leaks at onboarding — fix the experience before pouring more at the top.\n\nAction items:\n- Audit the first 7 days\n- Reduce time-to-value\n- Add progress indicators",
-    createdAt: new Date(Date.now() - 172800000),
-  },
-  {
-    id: 4,
-    tag: "research",
-    title: "Voice interfaces",
-    content:
-      "Studies show users form emotional attachments to voice interfaces faster than visual ones.\n\nVoice bypasses the analytical mind — it's intimate in a way screens never are.",
-    createdAt: new Date(Date.now() - 7200000),
-  },
-  {
-    id: 5,
-    tag: "tasks",
-    title: "Weekend list",
-    content:
-      "• Fix the garden gate latch\n• Call mum — been too long\n• Read the last 80 pages of the novel\n• Try that new place downtown",
-    createdAt: new Date(Date.now() - 9000000),
-  },
-  {
-    id: 6,
-    tag: "personal",
-    title: "Things I'm grateful for",
-    content:
-      "Good coffee in the morning. The way light comes through the window at 7am. Long walks with no destination.",
-    createdAt: new Date(Date.now() - 259200000),
-  },
-];
-
 const NOTES_STORAGE_KEY = "note-app-notes-v1";
-
-const mapSeedNote = (n) => ({
-  ...n,
-  pinned: false,
-  attachments: n.attachments ?? [],
-  contentHistory: n.contentHistory ?? [],
-});
 
 function parseStoredNotes(raw) {
   try {
@@ -726,8 +715,25 @@ function parseStoredNotes(raw) {
 
 /* ══════════════════════════════════════════════════ */
 export default function Home() {
-  const [notes, setNotes] = useState(() => SEED.map(mapSeedNote));
+  const convexDeploymentUrl = useConvexDeploymentUrl();
+  const useConvexDb = Boolean(convexDeploymentUrl);
+
+  const convexList = useQuery(api.notes.list, useConvexDb ? {} : "skip");
+  const createNoteConvex = useMutation(api.notes.create);
+  const updateNoteConvex = useMutation(api.notes.update);
+  const removeNoteConvex = useMutation(api.notes.remove);
+  const generateUploadUrl = useMutation(api.notes.generateUploadUrl);
+
+  const [localNotes, setLocalNotes] = useState([]);
   const [notesReady, setNotesReady] = useState(false);
+
+  const notes = useMemo(() => {
+    if (useConvexDb) {
+      if (convexList === undefined) return [];
+      return convexList.map(mapConvexNoteToClient);
+    }
+    return localNotes;
+  }, [useConvexDb, convexList, localNotes]);
   const [activeTag, setActiveTag] = useState("all");
   const [expandedId, setExpandedId] = useState(null);
   const [searchQ, setSearchQ] = useState("");
@@ -770,24 +776,28 @@ export default function Home() {
   }, [notes]);
 
   useEffect(() => {
+    if (useConvexDb) {
+      setNotesReady(true);
+      return;
+    }
     try {
       const raw = localStorage.getItem(NOTES_STORAGE_KEY);
       const parsed = raw ? parseStoredNotes(raw) : null;
-      if (parsed && parsed.length) setNotes(parsed);
+      if (parsed && parsed.length) setLocalNotes(parsed);
     } catch {
       /* noop */
     }
     setNotesReady(true);
-  }, []);
+  }, [useConvexDb]);
 
   useEffect(() => {
-    if (!notesReady) return;
+    if (!notesReady || useConvexDb) return;
     try {
-      localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(notes));
+      localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(localNotes));
     } catch {
       /* noop */
     }
-  }, [notes, notesReady]);
+  }, [localNotes, notesReady, useConvexDb]);
 
   useEffect(() => {
     if (recState === "recording") {
@@ -960,28 +970,46 @@ export default function Home() {
     searchRef.current?.blur();
   }, []);
 
-  const createNoteFromHashSyntax = useCallback((raw) => {
-    const parsed = parseHashNewNote(raw);
-    if (!parsed) return false;
-    const words = parsed.body.split(/\s+/).filter(Boolean);
-    const title =
-      words.slice(0, 6).join(" ") + (words.length > 6 ? "…" : "");
-    const n = {
-      id: Date.now(),
-      tag: parsed.tagSlug,
-      title: title || parsed.tagSlug,
-      content: parsed.body,
-      createdAt: new Date(),
-      pinned: false,
-      attachments: [],
-      contentHistory: [],
-    };
-    setNotes((p) => [n, ...p]);
-    setExpandedId(n.id);
-    setActiveTag(parsed.tagSlug);
-    setSearchQ("");
-    return true;
-  }, []);
+  const createNoteFromHashSyntax = useCallback(
+    (raw) => {
+      const parsed = parseHashNewNote(raw);
+      if (!parsed) return false;
+      const words = parsed.body.split(/\s+/).filter(Boolean);
+      const title =
+        words.slice(0, 6).join(" ") + (words.length > 6 ? "…" : "");
+      if (useConvexDb) {
+        void (async () => {
+          const nid = await createNoteConvex({
+            tag: parsed.tagSlug,
+            title: title || parsed.tagSlug,
+            content: parsed.body,
+            createdAt: Date.now(),
+            pinned: false,
+          });
+          setExpandedId(nid);
+          setActiveTag(parsed.tagSlug);
+          setSearchQ("");
+        })();
+        return true;
+      }
+      const n = {
+        id: Date.now(),
+        tag: parsed.tagSlug,
+        title: title || parsed.tagSlug,
+        content: parsed.body,
+        createdAt: new Date(),
+        pinned: false,
+        attachments: [],
+        contentHistory: [],
+      };
+      setLocalNotes((p) => [n, ...p]);
+      setExpandedId(n.id);
+      setActiveTag(parsed.tagSlug);
+      setSearchQ("");
+      return true;
+    },
+    [useConvexDb, createNoteConvex]
+  );
 
   const pickAtNote = useCallback((note) => {
     setAiTargetNoteId(note.id);
@@ -992,16 +1020,36 @@ export default function Home() {
     searchRef.current?.blur();
   }, []);
 
-  const restoreNoteVersion = useCallback((noteId) => {
-    setNotes((p) =>
-      p.map((n) => {
-        if (n.id !== noteId || !(n.contentHistory?.length)) return n;
-        const prev = n.contentHistory[n.contentHistory.length - 1];
-        const rest = n.contentHistory.slice(0, -1);
-        return { ...n, title: prev.title, content: prev.content, contentHistory: rest };
-      })
-    );
-  }, []);
+  const restoreNoteVersion = useCallback(
+    (noteId) => {
+      const n = notes.find((x) => x.id === noteId);
+      if (!n || !(n.contentHistory?.length)) return;
+      const prev = n.contentHistory[n.contentHistory.length - 1];
+      const rest = n.contentHistory.slice(0, -1);
+      if (useConvexDb) {
+        void updateNoteConvex({
+          id: n.id,
+          title: prev.title,
+          content: prev.content,
+          contentHistory: rest,
+        });
+        return;
+      }
+      setLocalNotes((p) =>
+        p.map((row) =>
+          row.id !== noteId
+            ? row
+            : {
+                ...row,
+                title: prev.title,
+                content: prev.content,
+                contentHistory: rest,
+              }
+        )
+      );
+    },
+    [notes, useConvexDb, updateNoteConvex]
+  );
 
   const pickSlashCommand = useCallback(
     (cmd) => {
@@ -1014,18 +1062,36 @@ export default function Home() {
         const title =
           words.slice(0, 6).join(" ") + (words.length > 6 ? "…" : "");
         const tag = notebookTagFromActive(activeTag);
+        const body =
+          "This note was created from **Generate** without an @ note target.\n\nUse @ to pick a note, then / → Generate to append to it.";
+        if (useConvexDb) {
+          void (async () => {
+            const nid = await createNoteConvex({
+              tag,
+              title,
+              content: body,
+              createdAt: Date.now(),
+              pinned: false,
+            });
+            setExpandedId(nid);
+            setActiveTag("all");
+            setSearchQ("");
+            setSlashActiveIndex(0);
+            searchRef.current?.blur();
+          })();
+          return;
+        }
         const n = {
           id: Date.now(),
           tag,
           title,
-          content:
-            "This note was created from **Generate** without an @ note target.\n\nUse @ to pick a note, then / → Generate to append to it.",
+          content: body,
           createdAt: new Date(),
           pinned: false,
           attachments: [],
           contentHistory: [],
         };
-        setNotes((p) => [n, ...p]);
+        setLocalNotes((p) => [n, ...p]);
         setExpandedId(n.id);
         setActiveTag("all");
         setSearchQ("");
@@ -1040,33 +1106,49 @@ export default function Home() {
         return;
       }
 
-      setNotes((p) => {
-        const note = p.find((n) => n.id === targetId);
-        if (!note) return p;
-        const next = stubAIResult(note, cmd.id);
-        if (!next) return p;
-        const snap = {
-          title: note.title,
-          content: note.content,
-          savedAt: Date.now(),
-        };
-        return p.map((n) =>
-          n.id !== targetId
-            ? n
-            : {
-                ...n,
-                title: next.title,
-                content: next.content,
-                contentHistory: [...(n.contentHistory ?? []), snap],
-              }
+      const note = notes.find((x) => x.id === targetId);
+      if (!note) return;
+      const next = stubAIResult(note, cmd.id);
+      if (!next) return;
+      const snap = {
+        title: note.title,
+        content: note.content,
+        savedAt: Date.now(),
+      };
+      if (useConvexDb) {
+        void updateNoteConvex({
+          id: note.id,
+          title: next.title,
+          content: next.content,
+          contentHistory: [...(note.contentHistory ?? []), snap],
+        });
+      } else {
+        setLocalNotes((p) =>
+          p.map((row) =>
+            row.id !== targetId
+              ? row
+              : {
+                  ...row,
+                  title: next.title,
+                  content: next.content,
+                  contentHistory: [...(row.contentHistory ?? []), snap],
+                }
+          )
         );
-      });
+      }
       setExpandedId(targetId);
       setSearchQ("");
       setSlashActiveIndex(0);
       searchRef.current?.blur();
     },
-    [aiTargetNoteId, activeTag]
+    [
+      aiTargetNoteId,
+      activeTag,
+      notes,
+      useConvexDb,
+      createNoteConvex,
+      updateNoteConvex,
+    ]
   );
 
   const filtered = notes.filter((n) => {
@@ -1141,43 +1223,105 @@ export default function Home() {
     const words = transcript.trim().split(" ");
     const title =
       words.slice(0, 5).join(" ") + (words.length > 5 ? "…" : "");
+    const body = transcript.trim();
+    if (useConvexDb) {
+      void (async () => {
+        const nid = await createNoteConvex({
+          tag: saveTag,
+          title,
+          content: body,
+          createdAt: Date.now(),
+          pinned: false,
+        });
+        setExpandedId(nid);
+        setActiveTag("all");
+        setTranscript("");
+        setShowModal(false);
+      })();
+      return;
+    }
     const n = {
       id: Date.now(),
       tag: saveTag,
       title,
-      content: transcript.trim(),
+      content: body,
       createdAt: new Date(),
       pinned: false,
       attachments: [],
       contentHistory: [],
     };
-    setNotes((p) => [n, ...p]);
+    setLocalNotes((p) => [n, ...p]);
     setExpandedId(n.id);
     setActiveTag("all");
     setTranscript("");
     setShowModal(false);
   };
 
-  const updateNote = (id, field, val) =>
-    setNotes((p) => p.map((n) => (n.id === id ? { ...n, [field]: val } : n)));
-
-  const addAttachmentsToNote = useCallback((noteId, fileList) => {
-    const files = Array.from(fileList || []).filter(Boolean);
-    if (!files.length) return;
-    Promise.all(files.map((f) => fileToAttachment(f).catch(() => null))).then(
-      (results) => {
-        const added = results.filter(Boolean);
-        if (!added.length) return;
-        setNotes((p) =>
-          p.map((n) =>
-            n.id === noteId
-              ? { ...n, attachments: [...(n.attachments ?? []), ...added] }
-              : n
-          )
-        );
+  const updateNote = useCallback(
+    (id, field, val) => {
+      if (useConvexDb) {
+        void updateNoteConvex({ id, [field]: val });
+        return;
       }
-    );
-  }, []);
+      setLocalNotes((p) =>
+        p.map((n) => (n.id === id ? { ...n, [field]: val } : n))
+      );
+    },
+    [useConvexDb, updateNoteConvex]
+  );
+
+  const addAttachmentsToNote = useCallback(
+    (noteId, fileList) => {
+      const files = Array.from(fileList || []).filter(Boolean);
+      if (!files.length) return;
+      if (useConvexDb) {
+        void (async () => {
+          const n = notes.find((x) => x.id === noteId);
+          if (!n) return;
+          const base = attachmentsForConvex(n.attachments);
+          const added = [];
+          for (const f of files) {
+            if (f.size > MAX_ATTACHMENT_BYTES) continue;
+            try {
+              const storageId = await uploadFileToConvexStorage(
+                f,
+                generateUploadUrl
+              );
+              added.push({
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                kind: f.type.startsWith("image/") ? "image" : "file",
+                name: f.name || "Attachment",
+                mime: f.type || "",
+                storageId,
+              });
+            } catch {
+              /* skip failed upload */
+            }
+          }
+          if (!added.length) return;
+          await updateNoteConvex({
+            id: n.id,
+            attachments: [...base, ...added],
+          });
+        })();
+        return;
+      }
+      Promise.all(files.map((f) => fileToAttachment(f).catch(() => null))).then(
+        (results) => {
+          const added = results.filter(Boolean);
+          if (!added.length) return;
+          setLocalNotes((p) =>
+            p.map((row) =>
+              row.id === noteId
+                ? { ...row, attachments: [...(row.attachments ?? []), ...added] }
+                : row
+            )
+          );
+        }
+      );
+    },
+    [useConvexDb, notes, generateUploadUrl, updateNoteConvex]
+  );
 
   const createNoteWithDroppedFiles = useCallback(
     (files) => {
@@ -1190,6 +1334,41 @@ export default function Home() {
       const title =
         arr.length === 1 ? stem : `${stem} +${arr.length - 1} files`;
       const tag = notebookTagFromActive(activeTag);
+      if (useConvexDb) {
+        void (async () => {
+          const uploads = [];
+          for (const f of arr) {
+            if (f.size > MAX_ATTACHMENT_BYTES) continue;
+            try {
+              const storageId = await uploadFileToConvexStorage(
+                f,
+                generateUploadUrl
+              );
+              uploads.push({
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                kind: f.type.startsWith("image/") ? "image" : "file",
+                name: f.name || "Attachment",
+                mime: f.type || "",
+                storageId,
+              });
+            } catch {
+              /* skip */
+            }
+          }
+          const nid = await createNoteConvex({
+            tag,
+            title,
+            content: "",
+            createdAt: Date.now(),
+            pinned: false,
+            attachments: uploads,
+          });
+          setExpandedId(nid);
+          setActiveTag("all");
+          setSearchQ("");
+        })();
+        return;
+      }
       const id = Date.now();
       const n = {
         id,
@@ -1201,13 +1380,19 @@ export default function Home() {
         attachments: [],
         contentHistory: [],
       };
-      setNotes((p) => [n, ...p]);
+      setLocalNotes((p) => [n, ...p]);
       setExpandedId(id);
       setActiveTag("all");
       setSearchQ("");
       addAttachmentsToNote(id, arr);
     },
-    [activeTag, addAttachmentsToNote]
+    [
+      activeTag,
+      addAttachmentsToNote,
+      useConvexDb,
+      createNoteConvex,
+      generateUploadUrl,
+    ]
   );
 
   const handleAppFileDragOver = useCallback((e) => {
@@ -1234,23 +1419,36 @@ export default function Home() {
     [createNoteWithDroppedFiles]
   );
 
-  const removeAttachment = useCallback((noteId, attachmentId) => {
-    setNotes((p) =>
-      p.map((n) =>
-        n.id === noteId
-          ? {
-              ...n,
-              attachments: (n.attachments ?? []).filter(
-                (a) => a.id !== attachmentId
-              ),
-            }
-          : n
-      )
-    );
-  }, []);
+  const removeAttachment = useCallback(
+    (noteId, attachmentId) => {
+      if (useConvexDb) {
+        const n = notes.find((x) => x.id === noteId);
+        if (!n) return;
+        const next = attachmentsForConvex(n.attachments).filter(
+          (a) => a.id !== attachmentId
+        );
+        void updateNoteConvex({ id: n.id, attachments: next });
+        return;
+      }
+      setLocalNotes((p) =>
+        p.map((row) =>
+          row.id === noteId
+            ? {
+                ...row,
+                attachments: (row.attachments ?? []).filter(
+                  (a) => a.id !== attachmentId
+                ),
+              }
+            : row
+        )
+      );
+    },
+    [useConvexDb, notes, updateNoteConvex]
+  );
 
   const deleteNote = (id) => {
-    setNotes((p) => p.filter((n) => n.id !== id));
+    if (useConvexDb) void removeNoteConvex({ id });
+    else setLocalNotes((p) => p.filter((n) => n.id !== id));
     if (expandedId === id) setExpandedId(null);
     setAiTargetNoteId((cur) => (cur === id ? null : cur));
   };
@@ -1261,10 +1459,15 @@ export default function Home() {
   }, [notes, aiTargetNoteId]);
   const toggle = (id) => setExpandedId((p) => (p === id ? null : id));
 
-  const togglePin = (id) =>
-    setNotes((p) =>
-      p.map((n) => (n.id === id ? { ...n, pinned: !n.pinned } : n))
-    );
+  const togglePin = (id) => {
+    const n = notes.find((x) => x.id === id);
+    if (!n) return;
+    if (useConvexDb) void updateNoteConvex({ id: n.id, pinned: !n.pinned });
+    else
+      setLocalNotes((p) =>
+        p.map((row) => (row.id === id ? { ...row, pinned: !row.pinned } : row))
+      );
+  };
 
   const renderTagButtons = (onPick) =>
     sidebarTags.map((t) => {
@@ -1330,6 +1533,25 @@ export default function Home() {
       const title =
         words.slice(0, 6).join(" ") + (words.length > 6 ? "…" : "");
       const tag = notebookTagFromActive(activeTag);
+      if (useConvexDb) {
+        void (async () => {
+          try {
+            const nid = await createNoteConvex({
+              tag,
+              title,
+              content: trimmed,
+              createdAt: Date.now(),
+              pinned: false,
+            });
+            setExpandedId(nid);
+            setActiveTag("all");
+            setSearchQ("");
+          } catch (err) {
+            console.error("Convex create note failed:", err);
+          }
+        })();
+        return;
+      }
       const n = {
         id: Date.now(),
         tag,
@@ -1340,12 +1562,12 @@ export default function Home() {
         attachments: [],
         contentHistory: [],
       };
-      setNotes((p) => [n, ...p]);
+      setLocalNotes((p) => [n, ...p]);
       setExpandedId(n.id);
       setActiveTag("all");
       setSearchQ("");
     },
-    [activeTag]
+    [activeTag, useConvexDb, createNoteConvex]
   );
 
   return (
@@ -1462,7 +1684,7 @@ export default function Home() {
                           : hashPaletteOpen
                             ? "Pick a tag to match the sidebar filter — same as clicking notebooks on the left."
                             : searchQ.trim()
-                              ? "Press Enter to save your text as a new note, or Shift+Enter from the search bar anytime."
+                              ? "Press Enter in the search bar to save your text as a new note."
                               : activeTag === "images"
                                 ? "Add images to a note from the expanded note view, or drop files onto the app."
                                 : activeTag === "files"
@@ -1736,8 +1958,7 @@ export default function Home() {
                 drnote notebook (tag is lowercase after #)
               </li>
               <li>After an AI edit, use Restore in the note to bring back the prior version</li>
-              <li>Shift+Enter in search adds a new note</li>
-              <li>Enter when there are no search matches saves a note</li>
+              <li>Enter in search saves a new note (when not using @, /, or #)</li>
             </ul>
             <p style={s.settingsHint}>
               Green traffic light enters full screen; yellow or red exits
@@ -2080,10 +2301,8 @@ export default function Home() {
                 return;
               }
               if (searchQ.startsWith("/") || searchQ.startsWith("@")) return;
-              if (e.shiftKey || visible.length === 0) {
-                e.preventDefault();
-                createNoteFromText(searchQ);
-              }
+              e.preventDefault();
+              createNoteFromText(searchQ);
             }}
           />
           {searchQ.trim() && !commandPaletteOpen && (
@@ -2226,9 +2445,9 @@ function NoteCard({
                 <span style={s.cardTitle}>{hl(note.title, searchQ)}</span>
               </span>
             </div>
-            {firstImage?.dataUrl && (
+            {(firstImage?.dataUrl || firstImage?.url) && (
               <img
-                src={firstImage.dataUrl}
+                src={firstImage.dataUrl || firstImage.url}
                 alt=""
                 style={s.cardListThumb}
                 draggable={false}
@@ -2395,7 +2614,7 @@ function NoteCard({
                   a.kind === "image" ? (
                     <div key={a.id} style={s.attachmentImageWrap}>
                       <img
-                        src={a.dataUrl}
+                        src={a.dataUrl || a.url}
                         alt={a.name}
                         style={s.attachmentImage}
                       />
