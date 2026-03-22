@@ -158,6 +158,23 @@ function titleAndBodyFromPlainText(text) {
   };
 }
 
+/** Sidebar filter slugs — cannot be used as notebook tags from #hashtags. */
+const RESERVED_NOTEBOOK_SLUGS = new Set(["all", "images", "files"]);
+
+/**
+ * First `#slug` in title or body (after start-of-text or whitespace) becomes the notebook tag.
+ * Slugs are [a-zA-Z0-9_-]+, stored lowercase. Reserved names are ignored (see RESERVED_NOTEBOOK_SLUGS).
+ */
+function tagFromHashtagInNoteText(title, content) {
+  const text = `${title ?? ""}\n${content ?? ""}`;
+  const re = /(?:^|[\s])#([a-zA-Z0-9_-]+)/g;
+  const m = re.exec(text);
+  if (!m) return "";
+  const raw = m[1].toLowerCase();
+  if (RESERVED_NOTEBOOK_SLUGS.has(raw)) return "";
+  return raw;
+}
+
 function mapConvexNoteToClient(doc) {
   return {
     id: doc._id,
@@ -368,48 +385,6 @@ function TagNavIcon({ tag }) {
           <rect x="14" y="14" width="7" height="7" rx="1.5" />
         </svg>
       );
-    case "ideas":
-      return (
-        <svg {...p}>
-          <path d="M9 18h6M10 22h4" />
-          <path d="M12 2a7 7 0 0 0-4 12c1 2 2 3 2 5h4c0-2 1-3 2-5a7 7 0 0 0-4-12z" />
-        </svg>
-      );
-    case "work":
-      return (
-        <svg {...p}>
-          <rect x="2" y="7" width="20" height="14" rx="2" />
-          <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
-        </svg>
-      );
-    case "personal":
-      return (
-        <svg {...p}>
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-          <circle cx="12" cy="7" r="4" />
-        </svg>
-      );
-    case "journal":
-      return (
-        <svg {...p}>
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-        </svg>
-      );
-    case "tasks":
-      return (
-        <svg {...p}>
-          <path d="M9 11l3 3L22 4" />
-          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-        </svg>
-      );
-    case "research":
-      return (
-        <svg {...p}>
-          <circle cx="11" cy="11" r="8" />
-          <path d="M21 21l-4.35-4.35" />
-        </svg>
-      );
     case "images":
       return (
         <svg {...p}>
@@ -512,11 +487,12 @@ function noteMatchesSidebarTag(note, tag) {
     return (note.attachments ?? []).some((a) => a.kind === "image");
   if (tag === "files")
     return (note.attachments ?? []).some((a) => a.kind === "file");
-  return note.tag === tag;
+  return (note.tag || "").toLowerCase() === tag;
 }
 
+/** Default notebook tag for new notes when sidebar is All or a filter-only pill. */
 function notebookTagFromActive(activeTag) {
-  if (activeTag === "all" || FILTER_ONLY_TAGS.has(activeTag)) return "ideas";
+  if (activeTag === "all" || FILTER_ONLY_TAGS.has(activeTag)) return "";
   return activeTag;
 }
 
@@ -534,20 +510,7 @@ function parseHashNewNote(q) {
   return { tagSlug: m[1].toLowerCase(), body };
 }
 
-const SIDEBAR_CORE_ORDER = [
-  "all",
-  "ideas",
-  "work",
-  "personal",
-  "journal",
-  "tasks",
-  "research",
-];
 const SIDEBAR_TAIL_TAGS = ["images", "files"];
-const SIDEBAR_FIXED_SLUG_SET = new Set([
-  ...SIDEBAR_CORE_ORDER,
-  ...SIDEBAR_TAIL_TAGS,
-]);
 
 /** Slash commands shown when the search box starts with `/` (UI only until wired to AI). */
 const AI_SLASH_COMMANDS = [
@@ -716,7 +679,7 @@ function parseStoredNotes(raw) {
     return data.map((n) => ({
       ...n,
       id: typeof n.id === "number" ? n.id : Number(n.id) || Date.now(),
-      tag: typeof n.tag === "string" ? n.tag : "ideas",
+      tag: typeof n.tag === "string" ? n.tag : "",
       title: typeof n.title === "string" ? n.title : "",
       content: typeof n.content === "string" ? n.content : "",
       createdAt: n.createdAt ? new Date(n.createdAt) : new Date(),
@@ -772,7 +735,7 @@ export default function NotesApp() {
   const [transcript, setTranscript] = useState("");
   const [pulse, setPulse] = useState(0);
   const [showModal, setShowModal] = useState(false);
-  const [saveTag, setSaveTag] = useState("ideas");
+  const [saveTag, setSaveTag] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [themeId, setThemeId] = useState(DEFAULT_THEME_ID);
@@ -792,12 +755,15 @@ export default function NotesApp() {
     const fromNotes = [
       ...new Set(
         notes
-          .map((n) => (typeof n.tag === "string" ? n.tag.trim() : ""))
+          .map((n) =>
+            typeof n.tag === "string" ? n.tag.trim().toLowerCase() : ""
+          )
           .filter(Boolean)
+          .filter((t) => !RESERVED_NOTEBOOK_SLUGS.has(t))
       ),
-    ].filter((t) => !SIDEBAR_FIXED_SLUG_SET.has(t));
+    ];
     fromNotes.sort((a, b) => a.localeCompare(b));
-    return [...SIDEBAR_CORE_ORDER, ...fromNotes, ...SIDEBAR_TAIL_TAGS];
+    return ["all", ...fromNotes, ...SIDEBAR_TAIL_TAGS];
   }, [notes]);
 
   useEffect(() => {
@@ -1050,12 +1016,18 @@ export default function NotesApp() {
       if (!n || !(n.contentHistory?.length)) return;
       const prev = n.contentHistory[n.contentHistory.length - 1];
       const rest = n.contentHistory.slice(0, -1);
+      const restoredTag = tagFromHashtagInNoteText(prev.title, prev.content);
+      const tagPatch =
+        restoredTag !== (n.tag || "").toLowerCase()
+          ? { tag: restoredTag }
+          : {};
       if (useConvexDb) {
         void updateNoteConvex({
           id: n.id,
           title: prev.title,
           content: prev.content,
           contentHistory: rest,
+          ...tagPatch,
         });
         return;
       }
@@ -1068,6 +1040,7 @@ export default function NotesApp() {
                 title: prev.title,
                 content: prev.content,
                 contentHistory: rest,
+                ...tagPatch,
               }
         )
       );
@@ -1081,10 +1054,12 @@ export default function NotesApp() {
       const targetId = aiTargetNoteId;
 
       if (cmd.id === "generate" && targetId == null) {
-        const tag = notebookTagFromActive(activeTag);
         const body =
           "This note was created from **Generate** without an @ note target.\n\nUse @ to pick a note, then / → Generate to append to it.";
         const { title, content } = titleAndBodyFromPlainText(body);
+        const tag =
+          tagFromHashtagInNoteText(title, content) ||
+          notebookTagFromActive(activeTag);
         if (useConvexDb) {
           void (async () => {
             const nid = await createNoteConvex({
@@ -1136,12 +1111,16 @@ export default function NotesApp() {
         content: note.content,
         savedAt: Date.now(),
       };
+      const aiTag = tagFromHashtagInNoteText(next.title, next.content);
+      const tagPatch =
+        aiTag !== (note.tag || "").toLowerCase() ? { tag: aiTag } : {};
       if (useConvexDb) {
         void updateNoteConvex({
           id: note.id,
           title: next.title,
           content: next.content,
           contentHistory: [...(note.contentHistory ?? []), snap],
+          ...tagPatch,
         });
       } else {
         setLocalNotes((p) =>
@@ -1153,6 +1132,7 @@ export default function NotesApp() {
                   title: next.title,
                   content: next.content,
                   contentHistory: [...(row.contentHistory ?? []), snap],
+                  ...tagPatch,
                 }
           )
         );
@@ -1242,10 +1222,12 @@ export default function NotesApp() {
   const saveNote = () => {
     if (!transcript.trim()) return;
     const { title, content } = titleAndBodyFromPlainText(transcript);
+    const tag =
+      tagFromHashtagInNoteText(title, content) || saveTag || "";
     if (useConvexDb) {
       void (async () => {
         const nid = await createNoteConvex({
-          tag: saveTag,
+          tag,
           title,
           content,
           createdAt: Date.now(),
@@ -1260,7 +1242,7 @@ export default function NotesApp() {
     }
     const n = {
       id: Date.now(),
-      tag: saveTag,
+      tag,
       title,
       content,
       createdAt: new Date(),
@@ -1277,15 +1259,32 @@ export default function NotesApp() {
 
   const updateNote = useCallback(
     (id, field, val) => {
+      const n = notes.find((x) => x.id === id);
+      if (!n) return;
+      if (field !== "title" && field !== "content") {
+        if (useConvexDb) void updateNoteConvex({ id, [field]: val });
+        else
+          setLocalNotes((p) =>
+            p.map((row) => (row.id === id ? { ...row, [field]: val } : row))
+          );
+        return;
+      }
+      const nextTitle = field === "title" ? val : n.title;
+      const nextContent = field === "content" ? val : n.content;
+      const derivedTag = tagFromHashtagInNoteText(nextTitle, nextContent);
+      const tagPatch =
+        derivedTag !== (n.tag || "").toLowerCase() ? { tag: derivedTag } : {};
       if (useConvexDb) {
-        void updateNoteConvex({ id, [field]: val });
+        void updateNoteConvex({ id, [field]: val, ...tagPatch });
         return;
       }
       setLocalNotes((p) =>
-        p.map((n) => (n.id === id ? { ...n, [field]: val } : n))
+        p.map((row) =>
+          row.id === id ? { ...row, [field]: val, ...tagPatch } : row
+        )
       );
     },
-    [useConvexDb, updateNoteConvex]
+    [useConvexDb, updateNoteConvex, notes]
   );
 
   const addAttachmentsToNote = useCallback(
@@ -1351,7 +1350,9 @@ export default function NotesApp() {
       );
       const title =
         arr.length === 1 ? stem : `${stem} +${arr.length - 1} files`;
-      const tag = notebookTagFromActive(activeTag);
+      const tag =
+        tagFromHashtagInNoteText(title, "") ||
+        notebookTagFromActive(activeTag);
       if (useConvexDb) {
         void (async () => {
           const uploads = [];
@@ -1500,7 +1501,9 @@ export default function NotesApp() {
               ? notes.filter((n) =>
                   (n.attachments ?? []).some((a) => a.kind === "file")
                 ).length
-              : notes.filter((n) => n.tag === t).length;
+              : notes.filter(
+                  (n) => (n.tag || "").toLowerCase() === t
+                ).length;
       const active = activeTag === t;
       return (
         <button
@@ -1548,7 +1551,9 @@ export default function NotesApp() {
       const trimmed = text.trim();
       if (!trimmed) return;
       const { title, content } = titleAndBodyFromPlainText(trimmed);
-      const tag = notebookTagFromActive(activeTag);
+      const tag =
+        tagFromHashtagInNoteText(title, content) ||
+        notebookTagFromActive(activeTag);
       if (useConvexDb) {
         void (async () => {
           try {
@@ -1786,36 +1791,64 @@ export default function NotesApp() {
             />
             <div style={s.modalMeta}>
               <span style={s.modalMetaLbl}>Notebook</span>
+              <p style={s.voiceModalModelHint}>
+                Type <kbd style={s.kbd}>#tagname</kbd> in the text to set the
+                notebook (first hashtag wins). Or pick an existing tag below.
+              </p>
               <div style={s.inlineTags}>
+                <button
+                  type="button"
+                  className="inline-tag"
+                  style={{
+                    ...s.inlineTag,
+                    background:
+                      saveTag === ""
+                        ? "var(--note-accent)"
+                        : "var(--note-surface)",
+                    color:
+                      saveTag === ""
+                        ? "var(--note-on-accent)"
+                        : "var(--note-text-empty)",
+                    borderWidth: 1,
+                    borderStyle: "solid",
+                    borderColor:
+                      saveTag === ""
+                        ? "var(--note-accent)"
+                        : "var(--note-border)",
+                  }}
+                  onClick={() => setSaveTag("")}
+                >
+                  Untagged
+                </button>
                 {sidebarTags
                   .filter((t) => t !== "all" && !FILTER_ONLY_TAGS.has(t))
                   .map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    className="inline-tag"
-                    style={{
-                      ...s.inlineTag,
-                      background:
-                        saveTag === t
-                          ? "var(--note-accent)"
-                          : "var(--note-surface)",
-                      color:
-                        saveTag === t
-                          ? "var(--note-on-accent)"
-                          : "var(--note-text-empty)",
-                      borderWidth: 1,
-                      borderStyle: "solid",
-                      borderColor:
-                        saveTag === t
-                          ? "var(--note-accent)"
-                          : "var(--note-border)",
-                    }}
-                    onClick={() => setSaveTag(t)}
-                  >
-                    {t}
-                  </button>
-                ))}
+                    <button
+                      key={t}
+                      type="button"
+                      className="inline-tag"
+                      style={{
+                        ...s.inlineTag,
+                        background:
+                          saveTag === t
+                            ? "var(--note-accent)"
+                            : "var(--note-surface)",
+                        color:
+                          saveTag === t
+                            ? "var(--note-on-accent)"
+                            : "var(--note-text-empty)",
+                        borderWidth: 1,
+                        borderStyle: "solid",
+                        borderColor:
+                          saveTag === t
+                            ? "var(--note-accent)"
+                            : "var(--note-border)",
+                      }}
+                      onClick={() => setSaveTag(t)}
+                    >
+                      {t}
+                    </button>
+                  ))}
               </div>
             </div>
             <div style={s.modalMeta}>
@@ -1969,9 +2002,10 @@ export default function NotesApp() {
                 <kbd style={s.kbd}>@</kbd> in search picks a note for AI (then use /)
               </li>
               <li>
-                <kbd style={s.kbd}>#</kbd> filters the tag list;{" "}
-                <kbd style={s.kbd}>#drnote My text…</kbd> adds a note in the
-                drnote notebook (tag is lowercase after #)
+                <kbd style={s.kbd}>#</kbd> in search filters notebooks;{" "}
+                <kbd style={s.kbd}>#slug My text…</kbd> creates a note in that
+                notebook. Inside a note, <kbd style={s.kbd}>#slug</kbd> sets the
+                notebook (first hashtag in title or body).
               </li>
               <li>After an AI edit, use Restore in the note to bring back the prior version</li>
               <li>Enter in search saves a new note (when not using @, /, or #)</li>
@@ -2129,7 +2163,9 @@ export default function NotesApp() {
                         ? notes.filter((n) =>
                             (n.attachments ?? []).some((a) => a.kind === "file")
                           ).length
-                        : notes.filter((n) => n.tag === t).length;
+                        : notes.filter(
+                            (n) => (n.tag || "").toLowerCase() === t
+                          ).length;
                 return (
                   <button
                     key={t}
