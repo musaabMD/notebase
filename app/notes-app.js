@@ -769,6 +769,8 @@ export default function NotesApp() {
   const [transcript, setTranscript] = useState("");
   const [pulse, setPulse] = useState(0);
   const [showModal, setShowModal] = useState(false);
+  const [voiceAiBusy, setVoiceAiBusy] = useState(false);
+  const [voiceAiError, setVoiceAiError] = useState("");
   const [saveTag, setSaveTag] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -790,6 +792,7 @@ export default function NotesApp() {
   const voiceModelHydrated = useRef(false);
   const transcriptRef = useRef("");
   transcriptRef.current = transcript;
+  const voiceSaveAbortRef = useRef(null);
 
   const sidebarTags = useMemo(() => {
     const fromNotes = [
@@ -963,6 +966,10 @@ export default function NotesApp() {
     document.addEventListener("mousedown", onDocDown);
     return () => document.removeEventListener("mousedown", onDocDown);
   }, [showModal, settingsOpen]);
+
+  useEffect(() => {
+    if (showModal) setVoiceAiError("");
+  }, [showModal]);
 
   const hashNoteFromSearch = parseHashNewNote(searchQ);
 
@@ -1297,43 +1304,130 @@ export default function NotesApp() {
     recRef.current.start();
   }, [stopRec]);
 
-  const saveNote = () => {
-    if (!transcript.trim()) return;
-    const { title, content } = titleAndBodyFromPlainText(transcript);
-    const tag =
-      tagFromHashtagInNoteText(title, content) || saveTag || "";
-    if (useConvexDb) {
-      void (async () => {
-        const nid = await createNoteConvex({
-          tag,
-          title,
-          content,
-          createdAt: Date.now(),
-          pinned: false,
-        });
-        setExpandedId(nid);
-        setActiveTag("all");
-        setTranscript("");
-        setShowModal(false);
-      })();
-      return;
-    }
-    const n = {
-      id: Date.now(),
-      tag,
-      title,
-      content,
-      createdAt: new Date(),
-      pinned: false,
-      attachments: [],
-      contentHistory: [],
-    };
-    setLocalNotes((p) => [n, ...p]);
-    setExpandedId(n.id);
-    setActiveTag("all");
-    setTranscript("");
+  const saveNote = useCallback(
+    async ({ skipAi = false } = {}) => {
+      if (!transcript.trim()) return;
+      setVoiceAiError("");
+
+      if (skipAi) {
+        voiceSaveAbortRef.current?.abort();
+        voiceSaveAbortRef.current = null;
+        setVoiceAiBusy(false);
+      }
+
+      let title;
+      let content;
+
+      if (!skipAi) {
+        voiceSaveAbortRef.current?.abort();
+        const ac = new AbortController();
+        voiceSaveAbortRef.current = ac;
+        setVoiceAiBusy(true);
+        try {
+          const res = await fetch("/api/openrouter/voice-note", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: ac.signal,
+            body: JSON.stringify({
+              transcript: transcript.trim(),
+              model: (voiceNoteModelId || DEFAULT_VOICE_NOTE_MODEL).trim(),
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const msg =
+              typeof data.error === "string"
+                ? data.error
+                : data.error?.message ||
+                  data.message ||
+                  `Request failed (${res.status})`;
+            throw new Error(msg);
+          }
+          if (typeof data.title !== "string" || typeof data.content !== "string") {
+            throw new Error("Invalid response from server");
+          }
+          title = data.title;
+          content = data.content;
+        } catch (e) {
+          if (e instanceof Error && e.name === "AbortError") {
+            setVoiceAiBusy(false);
+            return;
+          }
+          setVoiceAiError(
+            e instanceof Error ? e.message : "Could not reach OpenRouter"
+          );
+          setVoiceAiBusy(false);
+          return;
+        }
+        setVoiceAiBusy(false);
+        voiceSaveAbortRef.current = null;
+      } else {
+        const parsed = titleAndBodyFromPlainText(transcript);
+        title = parsed.title;
+        content = parsed.content;
+      }
+
+      const tag =
+        tagFromHashtagInNoteText(title, content) || saveTag || "";
+
+      if (useConvexDb) {
+        try {
+          const nid = await createNoteConvex({
+            tag,
+            title,
+            content,
+            createdAt: Date.now(),
+            pinned: false,
+          });
+          setExpandedId(nid);
+          setActiveTag("all");
+          setTranscript("");
+          setShowModal(false);
+          setVoiceAiError("");
+          setVoiceAiBusy(false);
+        } catch (err) {
+          console.error("Convex create note failed:", err);
+          setVoiceAiError("Could not save note to the database.");
+          setVoiceAiBusy(false);
+        }
+        return;
+      }
+
+      const n = {
+        id: Date.now(),
+        tag,
+        title,
+        content,
+        createdAt: new Date(),
+        pinned: false,
+        attachments: [],
+        contentHistory: [],
+      };
+      setLocalNotes((p) => [n, ...p]);
+      setExpandedId(n.id);
+      setActiveTag("all");
+      setTranscript("");
+      setShowModal(false);
+      setVoiceAiError("");
+      setVoiceAiBusy(false);
+    },
+    [
+      transcript,
+      voiceNoteModelId,
+      saveTag,
+      useConvexDb,
+      createNoteConvex,
+    ]
+  );
+
+  const closeVoiceModal = useCallback(() => {
+    voiceSaveAbortRef.current?.abort();
+    voiceSaveAbortRef.current = null;
+    setVoiceAiBusy(false);
     setShowModal(false);
-  };
+    setTranscript("");
+    setVoiceAiError("");
+  }, []);
 
   const updateNote = useCallback(
     (id, field, val) => {
@@ -1943,15 +2037,22 @@ export default function NotesApp() {
         <div
           className="modal-overlay"
           style={s.overlay}
-          onClick={() => setShowModal(false)}
+          onClick={() => {
+            if (!voiceAiBusy) closeVoiceModal();
+          }}
         >
           <div style={s.modal} onClick={(e) => e.stopPropagation()}>
             <div style={s.modalTop}>
               <span style={s.modalHd}>New voice note</span>
               <button
-                style={s.modalX}
-                onClick={() => setShowModal(false)}
+                style={{
+                  ...s.modalX,
+                  opacity: voiceAiBusy ? 0.4 : 1,
+                  pointerEvents: voiceAiBusy ? "none" : "auto",
+                }}
+                onClick={closeVoiceModal}
                 type="button"
+                aria-disabled={voiceAiBusy}
               >
                 <CloseIcon />
               </button>
@@ -1961,8 +2062,14 @@ export default function NotesApp() {
               value={transcript}
               onChange={(e) => setTranscript(e.target.value)}
               autoFocus
+              readOnly={voiceAiBusy}
               placeholder="Transcribed text…"
             />
+            {voiceAiError ? (
+              <p style={s.voiceModalError} role="alert">
+                {voiceAiError}
+              </p>
+            ) : null}
             <div style={s.modalMeta}>
               <span style={s.modalMetaLbl}>Notebook</span>
               <p style={s.voiceModalModelHint}>
@@ -2031,23 +2138,35 @@ export default function NotesApp() {
                 {formatVoiceModelIdForUi(voiceNoteModelId)}
               </span>
               <p style={s.voiceModalModelHint}>
-                Change in Settings → Voice note. Used when voice notes call
-                OpenRouter.
+                Change in Settings → Voice note.{" "}
+                <strong>Save note</strong> sends this text to OpenRouter, then
+                creates the note from the model&apos;s title and body.
               </p>
             </div>
             <div style={s.modalActions}>
               <button
                 type="button"
                 style={s.btnGhost}
-                onClick={() => {
-                  setShowModal(false);
-                  setTranscript("");
-                }}
+                disabled={voiceAiBusy}
+                onClick={closeVoiceModal}
               >
                 Discard
               </button>
-              <button type="button" style={s.btnDark} onClick={saveNote}>
-                Save note
+              <button
+                type="button"
+                style={s.btnGhost}
+                disabled={voiceAiBusy || !transcript.trim()}
+                onClick={() => saveNote({ skipAi: true })}
+              >
+                Save without AI
+              </button>
+              <button
+                type="button"
+                style={s.btnDark}
+                disabled={voiceAiBusy || !transcript.trim()}
+                onClick={() => saveNote({ skipAi: false })}
+              >
+                {voiceAiBusy ? "Working with AI…" : "Save note"}
               </button>
             </div>
           </div>
@@ -2136,7 +2255,10 @@ export default function NotesApp() {
             </div>
             <p style={themeUi.sectionLabel}>Voice note</p>
             <p style={s.settingsCopy}>
-              Model for voice-note AI (OpenRouter).
+              OpenRouter model used when you tap <strong>Save note</strong> on a
+              voice capture (polishes dictation into title + body). Needs{" "}
+              <code style={s.settingsCode}>OPENROUTER_API_KEY</code> on the
+              server.
             </p>
             <label htmlFor="voice-model-select" style={s.settingsFieldLbl}>
               Model
@@ -2188,7 +2310,27 @@ export default function NotesApp() {
               Green traffic light enters full screen; yellow or red exits
               (browser full screen).
             </p>
-            <div style={s.modalActions}>
+            <div
+              style={{
+                ...s.modalActions,
+                justifyContent: "space-between",
+                width: "100%",
+              }}
+            >
+              <button
+                type="button"
+                style={s.btnGhost}
+                onClick={async () => {
+                  try {
+                    await fetch("/api/auth/logout", { method: "POST" });
+                  } catch {
+                    /* still leave */
+                  }
+                  window.location.href = "/login";
+                }}
+              >
+                Lock app
+              </button>
               <button
                 type="button"
                 style={s.btnDark}
@@ -3796,6 +3938,15 @@ const s = {
     lineHeight: 1.55,
     margin: 0,
   },
+  settingsCode: {
+    fontSize: 12,
+    fontFamily:
+      'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+    padding: "1px 6px",
+    borderRadius: 4,
+    background: "var(--note-surface-muted)",
+    color: "var(--note-text)",
+  },
   settingsFieldLbl: {
     display: "block",
     fontSize: 12,
@@ -3847,6 +3998,18 @@ const s = {
     color: "var(--note-text-muted)",
     lineHeight: 1.45,
   },
+  voiceModalError: {
+    margin: "0 0 8px",
+    padding: "10px 12px",
+    borderRadius: 10,
+    fontSize: 13,
+    lineHeight: 1.45,
+    color: "var(--note-danger)",
+    background: "var(--note-danger-soft, rgba(180, 35, 24, 0.08))",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--note-del-hover-border, rgba(180, 35, 24, 0.25))",
+  },
   settingsList: {
     margin: "12px 0 0",
     paddingLeft: 20,
@@ -3860,7 +4023,13 @@ const s = {
     lineHeight: 1.5,
     margin: "14px 0 0",
   },
-  modalActions: { display: "flex", justifyContent: "flex-end", gap: 10 },
+  modalActions: {
+    display: "flex",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 10,
+  },
   btnGhost: {
     padding: "10px 16px",
     borderRadius: 10,
@@ -4305,6 +4474,7 @@ const css = `
   .stop-btn:hover { background: var(--note-stop-hover) !important; }
 
   button:focus-visible { outline: 2px solid var(--note-focus-ring); outline-offset: 2px; }
+  button:disabled { opacity: 0.55; cursor: not-allowed; }
   input::placeholder, textarea::placeholder { color: var(--note-text-muted); }
 
   .traffic-light-hit:hover .traffic-dot-visual { filter: brightness(1.12); }
