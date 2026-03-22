@@ -347,6 +347,28 @@ const MenuIcon = () => (
   </svg>
 );
 
+const ChevronDownIcon = ({ open }) => (
+  <svg
+    width="18"
+    height="18"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+    className="app-section-chevron"
+    style={{
+      flexShrink: 0,
+      transform: open ? "rotate(-180deg)" : "none",
+      transition: "transform 0.2s ease",
+    }}
+  >
+    <path d="M6 9l6 6 6-6" />
+  </svg>
+);
+
 /** Bookmark — outline style to match trash; stronger stroke when pinned. */
 const BookmarkIcon = ({ filled }) => (
   <svg
@@ -672,6 +694,18 @@ function stubAIResult(note, cmdId) {
 
 const NOTES_STORAGE_KEY = "note-app-notes-v1";
 
+const APP_SECTION_STORAGE_KEY = "note-app-section-v1";
+const APP_SECTION_IDS = ["notes", "sites", "bookmarks"];
+const APP_SECTION_LABELS = {
+  notes: "Notes",
+  sites: "Sites",
+  bookmarks: "Bookmarks",
+};
+
+function isValidAppSection(v) {
+  return typeof v === "string" && APP_SECTION_IDS.includes(v);
+}
+
 function parseStoredNotes(raw) {
   try {
     const data = JSON.parse(raw);
@@ -742,6 +776,12 @@ export default function NotesApp() {
   const [voiceNoteModelId, setVoiceNoteModelId] = useState(
     DEFAULT_VOICE_NOTE_MODEL
   );
+  const [appSection, setAppSection] = useState("notes");
+  const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
+  const sectionMenuRef = useRef(null);
+  const sectionHydrated = useRef(false);
+
+  const isNotesSection = appSection === "notes";
 
   const recRef = useRef(null);
   const pulseRef = useRef(null);
@@ -803,13 +843,14 @@ export default function NotesApp() {
   useEffect(() => {
     const h = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        if (appSection !== "notes") return;
         e.preventDefault();
         searchRef.current?.focus();
       }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, []);
+  }, [appSection]);
 
   useLayoutEffect(() => {
     if (!themeHydrated.current) {
@@ -852,6 +893,42 @@ export default function NotesApp() {
     }
   }, [voiceNoteModelId]);
 
+  useLayoutEffect(() => {
+    if (sectionHydrated.current) return;
+    sectionHydrated.current = true;
+    try {
+      const stored = localStorage.getItem(APP_SECTION_STORAGE_KEY);
+      if (isValidAppSection(stored)) setAppSection(stored);
+    } catch {
+      /* noop */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(APP_SECTION_STORAGE_KEY, appSection);
+    } catch {
+      /* noop */
+    }
+  }, [appSection]);
+
+  useEffect(() => {
+    if (!sectionMenuOpen) return;
+    const onDoc = (e) => {
+      if (sectionMenuRef.current?.contains(e.target)) return;
+      setSectionMenuOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setSectionMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [sectionMenuOpen]);
+
   const enterFullscreen = useCallback(async () => {
     const el = document.documentElement;
     if (document.fullscreenElement || document.webkitFullscreenElement) return;
@@ -879,6 +956,7 @@ export default function NotesApp() {
       if (el.closest?.(".note-card")) return;
       if (el.closest?.(".dock-search")) return;
       if (el.closest?.(".dock-fab")) return;
+      if (el.closest?.(".app-section-dropdown")) return;
       if (el.closest?.(".rec-dock")) return;
       setExpandedId(null);
     };
@@ -1414,17 +1492,22 @@ export default function NotesApp() {
     ]
   );
 
-  const handleAppFileDragOver = useCallback((e) => {
-    const types = e.dataTransfer?.types;
-    const typeList = types ? Array.from(types) : [];
-    if (typeList.includes("Files")) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "copy";
-    }
-  }, []);
+  const handleAppFileDragOver = useCallback(
+    (e) => {
+      if (appSection !== "notes") return;
+      const types = e.dataTransfer?.types;
+      const typeList = types ? Array.from(types) : [];
+      if (typeList.includes("Files")) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }
+    },
+    [appSection]
+  );
 
   const handleAppFileDrop = useCallback(
     (e) => {
+      if (appSection !== "notes") return;
       const types = e.dataTransfer?.types;
       const typeList = types ? Array.from(types) : [];
       if (!typeList.includes("Files")) return;
@@ -1435,7 +1518,7 @@ export default function NotesApp() {
       if (!files.length) return;
       createNoteWithDroppedFiles(files);
     },
-    [createNoteWithDroppedFiles]
+    [createNoteWithDroppedFiles, appSection]
   );
 
   const removeAttachment = useCallback(
@@ -1627,15 +1710,28 @@ export default function NotesApp() {
               <SettingsGlyph />
             </button>
           </div>
-          <p style={s.sidebarTitle}>Notebooks</p>
-          <nav style={s.sidebarNavScroll}>{renderTagButtons()}</nav>
+          <p style={s.sidebarTitle}>
+            {isNotesSection ? "Notebooks" : APP_SECTION_LABELS[appSection]}
+          </p>
+          {isNotesSection ? (
+            <nav style={s.sidebarNavScroll}>{renderTagButtons()}</nav>
+          ) : (
+            <div style={s.sidebarSectionHint}>
+              <p style={s.sidebarSectionHintText}>
+                Choose <strong>Notes</strong> in the header to open notebooks
+                and search.
+              </p>
+            </div>
+          )}
           <OpenRouterCredits />
         </aside>
 
         {menuOpen && (
           <aside className="sidebar-drawer" style={s.sidebarDrawer}>
             <div style={s.drawerHeader}>
-              <h2 style={s.drawerTitle}>Notebooks</h2>
+              <h2 style={s.drawerTitle}>
+                {isNotesSection ? "Notebooks" : APP_SECTION_LABELS[appSection]}
+              </h2>
               <div style={s.drawerHeaderActions}>
                 <button
                   type="button"
@@ -1658,7 +1754,18 @@ export default function NotesApp() {
                 </button>
               </div>
             </div>
-            <nav style={s.sidebarNavScroll}>{renderTagButtons(() => setMenuOpen(false))}</nav>
+            {isNotesSection ? (
+              <nav style={s.sidebarNavScroll}>
+                {renderTagButtons(() => setMenuOpen(false))}
+              </nav>
+            ) : (
+              <div style={s.sidebarSectionHint}>
+                <p style={s.sidebarSectionHintText}>
+                  Choose <strong>Notes</strong> in the header to open notebooks
+                  and search.
+                </p>
+              </div>
+            )}
             <OpenRouterCredits style={s.sidebarDrawerCredits} />
           </aside>
         )}
@@ -1676,67 +1783,134 @@ export default function NotesApp() {
                 >
                   <MenuIcon />
                 </button>
-                <h1 style={s.appName}>Notes</h1>
+                <div
+                  ref={sectionMenuRef}
+                  className="app-section-dropdown"
+                  style={s.appSectionWrap}
+                >
+                  <button
+                    type="button"
+                    className="app-section-trigger-hit"
+                    style={s.appSectionTrigger}
+                    aria-expanded={sectionMenuOpen}
+                    aria-haspopup="listbox"
+                    aria-label={`Switch section (current: ${APP_SECTION_LABELS[appSection]})`}
+                    onClick={() => setSectionMenuOpen((o) => !o)}
+                  >
+                    <span className="app-section-current-label">
+                      {APP_SECTION_LABELS[appSection]}
+                    </span>
+                    <ChevronDownIcon open={sectionMenuOpen} />
+                  </button>
+                  {sectionMenuOpen ? (
+                    <div
+                      role="listbox"
+                      aria-label="App section"
+                      style={s.appSectionMenu}
+                    >
+                      {APP_SECTION_IDS.map((id) => {
+                        const active = appSection === id;
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            role="option"
+                            aria-selected={active}
+                            className="app-section-menuitem"
+                            style={{
+                              ...s.appSectionMenuItem,
+                              ...(active ? s.appSectionMenuItemActive : {}),
+                            }}
+                            onClick={() => {
+                              setAppSection(id);
+                              setSectionMenuOpen(false);
+                            }}
+                          >
+                            {APP_SECTION_LABELS[id]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
               </header>
 
               <main style={s.main}>
-                {visible.length === 0 && (
+                {isNotesSection ? (
+                  <>
+                    {visible.length === 0 && (
+                      <div style={s.empty}>
+                        <p style={s.emptyTitle}>
+                          {atPaletteOpen
+                            ? "Mention a note"
+                            : slashPaletteOpen
+                              ? "AI commands"
+                              : hashPaletteOpen
+                                ? "Sidebar tags"
+                                : searchQ.trim()
+                                  ? `No notes match your search`
+                                  : activeTag === "images"
+                                    ? "No notes with images"
+                                    : activeTag === "files"
+                                      ? "No notes with files"
+                                      : "No notes yet"}
+                        </p>
+                        <p style={s.emptySub}>
+                          {atPaletteOpen
+                            ? "Select a note by title for AI actions, then use / for commands like Fix or Summarize."
+                            : slashPaletteOpen
+                              ? "Choose an action below, or keep typing to filter. Esc clears the palette."
+                              : hashPaletteOpen
+                                ? "Pick a tag to match the sidebar filter — same as clicking notebooks on the left."
+                                : searchQ.trim()
+                                  ? "Press Enter in the search bar to save your text as a new note."
+                                  : activeTag === "images"
+                                    ? "Add images to a note from the expanded note view, or drop files onto the app."
+                                    : activeTag === "files"
+                                      ? "Attach non-image files to a note, or drop them onto the app to create a note."
+                                      : "Use the search bar to find or add notes, or Voice to dictate. @ picks a note for AI; / opens commands."}
+                        </p>
+                      </div>
+                    )}
+
+                    {visible.map((note) => {
+                      const open = expandedId === note.id;
+                      return (
+                        <NoteCard
+                          key={note.id}
+                          note={note}
+                          open={open}
+                          searchQ={searchHighlightQ}
+                          onToggle={() => toggle(note.id)}
+                          onUpdate={(f, v) => updateNote(note.id, f, v)}
+                          onDelete={() => deleteNote(note.id)}
+                          onPin={() => togglePin(note.id)}
+                          onRestorePrevious={() =>
+                            restoreNoteVersion(note.id)
+                          }
+                          onAddAttachments={(files) =>
+                            addAttachmentsToNote(note.id, files)
+                          }
+                          onRemoveAttachment={(attId) =>
+                            removeAttachment(note.id, attId)
+                          }
+                        />
+                      );
+                    })}
+                  </>
+                ) : (
                   <div style={s.empty}>
                     <p style={s.emptyTitle}>
-                      {atPaletteOpen
-                        ? "Mention a note"
-                        : slashPaletteOpen
-                          ? "AI commands"
-                          : hashPaletteOpen
-                            ? "Sidebar tags"
-                            : searchQ.trim()
-                              ? `No notes match your search`
-                              : activeTag === "images"
-                                ? "No notes with images"
-                                : activeTag === "files"
-                                  ? "No notes with files"
-                                  : "No notes yet"}
+                      {appSection === "sites" ? "Sites" : "Bookmarks"}
                     </p>
                     <p style={s.emptySub}>
-                      {atPaletteOpen
-                        ? "Select a note by title for AI actions, then use / for commands like Fix or Summarize."
-                        : slashPaletteOpen
-                          ? "Choose an action below, or keep typing to filter. Esc clears the palette."
-                          : hashPaletteOpen
-                            ? "Pick a tag to match the sidebar filter — same as clicking notebooks on the left."
-                            : searchQ.trim()
-                              ? "Press Enter in the search bar to save your text as a new note."
-                              : activeTag === "images"
-                                ? "Add images to a note from the expanded note view, or drop files onto the app."
-                                : activeTag === "files"
-                                  ? "Attach non-image files to a note, or drop them onto the app to create a note."
-                                  : "Use the search bar to find or add notes, or Voice to dictate. @ picks a note for AI; / opens commands."}
+                      {appSection === "sites"
+                        ? "Saved sites and quick links will live here."
+                        : "Saved bookmarks will live here."}{" "}
+                      Switch to Notes in the header for notebooks and search.
                     </p>
                   </div>
                 )}
-
-                {visible.map((note) => {
-                  const open = expandedId === note.id;
-                  return (
-                    <NoteCard
-                      key={note.id}
-                      note={note}
-                      open={open}
-                      searchQ={searchHighlightQ}
-                      onToggle={() => toggle(note.id)}
-                      onUpdate={(f, v) => updateNote(note.id, f, v)}
-                      onDelete={() => deleteNote(note.id)}
-                      onPin={() => togglePin(note.id)}
-                      onRestorePrevious={() => restoreNoteVersion(note.id)}
-                      onAddAttachments={(files) =>
-                        addAttachmentsToNote(note.id, files)
-                      }
-                      onRemoveAttachment={(attId) =>
-                        removeAttachment(note.id, attId)
-                      }
-                    />
-                  );
-                })}
 
                 <div style={{ height: 200 }} aria-hidden />
               </main>
@@ -2027,7 +2201,8 @@ export default function NotesApp() {
         </div>
       )}
 
-      {/* ── SEARCH BAR (@ · / · # palettes) ── */}
+      {/* ── SEARCH BAR (@ · / · # palettes) — Notes only ── */}
+      {isNotesSection ? (
       <div
         className="dock-search"
         style={s.searchDockWrap}
@@ -2398,8 +2573,10 @@ export default function NotesApp() {
           </p>
         ) : null}
       </div>
+      ) : null}
 
-      {/* ── FAB ── */}
+      {/* ── FAB — Notes only ── */}
+      {isNotesSection ? (
       <button
         type="button"
         className="fab dock-fab"
@@ -2421,6 +2598,7 @@ export default function NotesApp() {
           )}
         </span>
       </button>
+      ) : null}
     </div>
   );
 }
@@ -3064,7 +3242,7 @@ const s = {
 
   header: {
     display: "grid",
-    gridTemplateColumns: "44px 1fr",
+    gridTemplateColumns: "44px minmax(0, 1fr)",
     alignItems: "center",
     padding: "16px 16px 12px",
     gap: 8,
@@ -3084,13 +3262,76 @@ const s = {
     color: "var(--note-text)",
     padding: 0,
   },
-  appName: {
-    fontSize: 22,
-    fontWeight: 600,
-    letterSpacing: "-0.03em",
-    color: "var(--note-text)",
-    textAlign: "center",
+  appSectionWrap: {
+    position: "relative",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+    minWidth: "min-content",
+    overflow: "visible",
+  },
+  appSectionTrigger: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
     margin: 0,
+    padding: "8px 12px",
+    borderRadius: 10,
+    borderWidth: 0,
+    background: "transparent",
+    cursor: "pointer",
+    color: "var(--note-text)",
+    fontFamily: "inherit",
+    width: "max-content",
+    maxWidth: "100%",
+    flexShrink: 0,
+    lineHeight: 1.2,
+  },
+  appSectionMenu: {
+    position: "absolute",
+    top: "calc(100% + 6px)",
+    left: "50%",
+    transform: "translateX(-50%)",
+    minWidth: 212,
+    padding: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--note-border)",
+    background: "var(--note-surface)",
+    boxShadow: "var(--note-card-shadow-open)",
+    zIndex: 850,
+  },
+  appSectionMenuItem: {
+    display: "block",
+    width: "100%",
+    textAlign: "left",
+    padding: "10px 12px",
+    borderRadius: 8,
+    borderWidth: 0,
+    background: "transparent",
+    cursor: "pointer",
+    fontSize: 16,
+    fontWeight: 500,
+    color: "var(--note-text)",
+    fontFamily: "inherit",
+  },
+  appSectionMenuItemActive: {
+    background: "var(--note-sidebar-pill-hover-bg)",
+    fontWeight: 600,
+  },
+
+  sidebarSectionHint: {
+    padding: "12px 14px 20px",
+    flex: 1,
+    minHeight: 0,
+  },
+  sidebarSectionHintText: {
+    margin: 0,
+    fontSize: 13,
+    lineHeight: 1.45,
+    color: "var(--note-text-secondary)",
   },
 
   main: {
@@ -3997,6 +4238,30 @@ const css = `
   .sidebar-credits-pill:hover { background: var(--note-sidebar-pill-hover-bg) !important; }
   .note-card:hover { border-color: var(--note-card-hover-border) !important; }
   .inline-tag:hover { filter: brightness(0.96); }
+  .app-section-menuitem:hover {
+    background: var(--note-sidebar-pill-hover-bg);
+  }
+  .app-section-trigger-hit:hover {
+    background: var(--note-sidebar-pill-hover-bg);
+  }
+  /* ChatGPT-style: bold visible title + muted chevron (label must not collapse in grid). */
+  .app-section-current-label {
+    font-size: 1.375rem !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.03em !important;
+    color: var(--note-text) !important;
+    line-height: 1.2 !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+  }
+  .app-section-chevron {
+    color: var(--note-text-tertiary) !important;
+    opacity: 0.85 !important;
+  }
+  .app-section-trigger-hit {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+  }
   .search-add-hover:hover { filter: brightness(0.95); }
   .pin-btn:hover {
     color: var(--note-pin-active) !important;
