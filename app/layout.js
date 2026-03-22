@@ -3,6 +3,9 @@ import { ConvexClientProvider } from "./convex-client-provider";
 import { RegisterServiceWorker } from "./register-service-worker";
 import "./globals.css";
 
+/** Ensures `process.env.NEXT_PUBLIC_CONVEX_URL` is evaluated when the request runs (e.g. on Vercel). */
+export const dynamic = "force-dynamic";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
