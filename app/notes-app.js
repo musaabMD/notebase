@@ -22,6 +22,8 @@ import {
   formatVoiceModelIdForUi,
 } from "./voice-openrouter";
 import dynamic from "next/dynamic";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useConvexDeploymentUrl } from "./convex-client-provider";
@@ -2765,6 +2767,7 @@ function NoteCard({
   const latestContentRef = useRef(note.content ?? "");
   const titleTimerRef = useRef(null);
   const contentTimerRef = useRef(null);
+  const [showMdPreview, setShowMdPreview] = useState(false);
 
   const flushTitle = useCallback(() => {
     if (titleTimerRef.current) {
@@ -2797,12 +2800,14 @@ function NoteCard({
         clearTimeout(contentTimerRef.current);
         contentTimerRef.current = null;
       }
+      setShowMdPreview(false);
       return;
     }
     setDraftTitle(note.title);
     setDraftContent(note.content ?? "");
     latestTitleRef.current = note.title;
     latestContentRef.current = note.content ?? "";
+    setShowMdPreview(false);
   }, [open, note.id]);
 
   useEffect(() => {
@@ -2837,12 +2842,11 @@ function NoteCard({
     !hideSnippet;
 
   useEffect(() => {
-    if (open && textareaRef.current) {
-      const el = textareaRef.current;
-      el.style.height = "auto";
-      el.style.height = el.scrollHeight + "px";
-    }
-  }, [open, draftContent]);
+    if (!open || showMdPreview || !textareaRef.current) return;
+    const el = textareaRef.current;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [open, draftContent, showMdPreview]);
 
   const onTitleChange = (e) => {
     const v = e.target.value;
@@ -2855,17 +2859,59 @@ function NoteCard({
     }, 450);
   };
 
+  const scheduleBodyUpdate = useCallback(
+    (nextValue, textareaEl) => {
+      latestContentRef.current = nextValue;
+      setDraftContent(nextValue);
+      if (textareaEl) {
+        requestAnimationFrame(() => {
+          textareaEl.style.height = "auto";
+          textareaEl.style.height = `${textareaEl.scrollHeight}px`;
+        });
+      }
+      if (contentTimerRef.current) clearTimeout(contentTimerRef.current);
+      contentTimerRef.current = setTimeout(() => {
+        onUpdate("content", latestContentRef.current);
+        contentTimerRef.current = null;
+      }, 450);
+    },
+    [onUpdate]
+  );
+
   const onContentChange = (e) => {
-    const v = e.target.value;
-    latestContentRef.current = v;
-    setDraftContent(v);
-    e.target.style.height = "auto";
-    e.target.style.height = e.target.scrollHeight + "px";
-    if (contentTimerRef.current) clearTimeout(contentTimerRef.current);
-    contentTimerRef.current = setTimeout(() => {
-      onUpdate("content", latestContentRef.current);
-      contentTimerRef.current = null;
-    }, 450);
+    scheduleBodyUpdate(e.target.value, e.target);
+  };
+
+  const onBodyPaste = (e) => {
+    const files = Array.from(e.clipboardData?.files || []);
+    if (files.length && onAddAttachments) {
+      e.preventDefault();
+      onAddAttachments(files);
+      return;
+    }
+    const html = e.clipboardData?.getData("text/html");
+    const plain = e.clipboardData?.getData("text/plain") || "";
+    if (!html?.trim()) return;
+    const plainNl = (plain.match(/\n/g) || []).length;
+    if (plainNl >= 6) return;
+    try {
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const fromHtml = (doc.body?.innerText || "")
+        .replace(/\r\n/g, "\n")
+        .replace(/\u00a0/g, " ");
+      if (!fromHtml.trim()) return;
+      const htmlNl = (fromHtml.match(/\n/g) || []).length;
+      if (htmlNl <= plainNl && fromHtml.length < plain.length * 1.05) return;
+      e.preventDefault();
+      const ta = e.currentTarget;
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      const before = draftContent.slice(0, start);
+      const after = draftContent.slice(end);
+      scheduleBodyUpdate(before + fromHtml + after, ta);
+    } catch {
+      /* browser default paste */
+    }
   };
 
   const cardStyle = {
@@ -2936,6 +2982,8 @@ function NoteCard({
             style={s.cardToolbar}
             onClick={(e) => {
               if (e.target.closest("input, button, textarea")) return;
+              if (e.target.closest(".note-body-mode-toggle")) return;
+              if (e.target.closest(".note-md-preview")) return;
               flushBoth();
               onToggle();
             }}
@@ -3041,22 +3089,71 @@ function NoteCard({
               if (files.length) onAddAttachments?.(files);
             }}
           >
-            <textarea
-              ref={textareaRef}
-              style={s.editBody}
-              value={draftContent}
-              onChange={onContentChange}
-              onBlur={flushContent}
-              placeholder="Write something… Drop images or files here, or paste them."
-              dir="auto"
-              onPaste={(e) => {
-                const files = Array.from(e.clipboardData?.files || []);
-                if (files.length && onAddAttachments) {
-                  e.preventDefault();
-                  onAddAttachments(files);
-                }
-              }}
-            />
+            <div
+              className="note-body-mode-toggle"
+              style={s.mdModeToggle}
+              role="tablist"
+              aria-label="Note body view"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!showMdPreview}
+                style={{
+                  ...s.mdModeBtn,
+                  ...(!showMdPreview ? s.mdModeBtnActive : {}),
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  flushContent();
+                  setShowMdPreview(false);
+                }}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={showMdPreview}
+                style={{
+                  ...s.mdModeBtn,
+                  ...(showMdPreview ? s.mdModeBtnActive : {}),
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  flushContent();
+                  setShowMdPreview(true);
+                }}
+              >
+                Preview
+              </button>
+            </div>
+            {showMdPreview ? (
+              <div
+                className="note-md-preview"
+                style={s.mdPreviewWrap}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                {draftContent.trim() ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {draftContent}
+                  </ReactMarkdown>
+                ) : (
+                  <p style={s.mdPreviewEmpty}>Nothing to preview yet.</p>
+                )}
+              </div>
+            ) : (
+              <textarea
+                ref={textareaRef}
+                style={s.editBody}
+                value={draftContent}
+                onChange={onContentChange}
+                onBlur={flushContent}
+                placeholder="Write or paste Markdown (from ChatGPT, etc.). Use Preview to see formatted text."
+                dir="auto"
+                onPaste={onBodyPaste}
+              />
+            )}
             {attachments.length > 0 && (
               <div style={s.attachmentsBlock}>
                 {attachments.map((a) =>
@@ -3660,6 +3757,48 @@ const s = {
     overflow: "hidden",
     minHeight: 100,
     unicodeBidi: "plaintext",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+  },
+
+  mdModeToggle: {
+    display: "flex",
+    gap: 6,
+    marginBottom: 10,
+    flexShrink: 0,
+  },
+  mdModeBtn: {
+    padding: "6px 12px",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--note-border)",
+    background: "var(--note-surface-muted)",
+    color: "var(--note-text-secondary)",
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: "pointer",
+    fontFamily: "inherit",
+  },
+  mdModeBtnActive: {
+    borderColor: "var(--note-text)",
+    color: "var(--note-text)",
+    background: "var(--note-surface)",
+    fontWeight: 600,
+  },
+  mdPreviewWrap: {
+    width: "100%",
+    minHeight: 120,
+    paddingBottom: 8,
+    fontSize: 16,
+    lineHeight: 1.65,
+    color: "var(--note-text-body)",
+    wordBreak: "break-word",
+  },
+  mdPreviewEmpty: {
+    margin: 0,
+    opacity: 0.45,
+    fontSize: 15,
   },
 
   cardListThumb: {
@@ -4476,6 +4615,58 @@ const css = `
   button:focus-visible { outline: 2px solid var(--note-focus-ring); outline-offset: 2px; }
   button:disabled { opacity: 0.55; cursor: not-allowed; }
   input::placeholder, textarea::placeholder { color: var(--note-text-muted); }
+
+  /* Markdown preview (react-markdown) — matches pasted ChatGPT-style content */
+  .note-md-preview { overflow-x: auto; }
+  .note-md-preview > *:first-child { margin-top: 0 !important; }
+  .note-md-preview > *:last-child { margin-bottom: 0 !important; }
+  .note-md-preview h1 { font-size: 1.35rem; font-weight: 700; margin: 1em 0 0.5em; letter-spacing: -0.02em; }
+  .note-md-preview h2 { font-size: 1.2rem; font-weight: 700; margin: 1em 0 0.45em; letter-spacing: -0.02em; }
+  .note-md-preview h3 { font-size: 1.08rem; font-weight: 650; margin: 0.9em 0 0.4em; }
+  .note-md-preview h4, .note-md-preview h5, .note-md-preview h6 { font-size: 1rem; font-weight: 650; margin: 0.75em 0 0.35em; }
+  .note-md-preview p { margin: 0 0 0.65em; }
+  .note-md-preview ul, .note-md-preview ol { margin: 0 0 0.65em; padding-left: 1.35em; }
+  .note-md-preview li { margin: 0.25em 0; }
+  .note-md-preview li > p { margin: 0.2em 0; }
+  .note-md-preview blockquote {
+    margin: 0.65em 0;
+    padding-left: 1em;
+    border-left: 3px solid var(--note-border-strong, #ccc);
+    color: var(--note-text-secondary);
+  }
+  .note-md-preview hr { border: none; border-top: 1px solid var(--note-border); margin: 1em 0; }
+  .note-md-preview code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.9em;
+    padding: 0.12em 0.35em;
+    border-radius: 4px;
+    background: var(--note-surface-muted);
+  }
+  .note-md-preview pre {
+    margin: 0.65em 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--note-surface-muted);
+    border: 1px solid var(--note-border-subtle);
+    overflow-x: auto;
+    font-size: 0.88em;
+    line-height: 1.5;
+  }
+  .note-md-preview pre code { padding: 0; background: none; border-radius: 0; }
+  .note-md-preview table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.75em 0;
+    font-size: 0.92em;
+  }
+  .note-md-preview th, .note-md-preview td {
+    border: 1px solid var(--note-border);
+    padding: 8px 10px;
+    text-align: left;
+  }
+  .note-md-preview th { background: var(--note-surface-muted); font-weight: 600; }
+  .note-md-preview a { color: var(--note-accent); text-decoration: underline; text-underline-offset: 2px; }
+  .note-md-preview strong { font-weight: 700; }
 
   .traffic-light-hit:hover .traffic-dot-visual { filter: brightness(1.12); }
 `;
