@@ -133,4 +133,23 @@ a {
   .app-file-drop-root .dock-search kbd {
     display: none;
   }
+  .app-file-drop-root .mobile-new-note-btn {
+    display: flex !important;
+  }
+  .app-file-drop-root .mobile-menu-btn {
+    display: flex !important;
+  }
+  .app-file-drop-root .dock-search {
+    padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  .app-file-drop-root .search-add-hover {
+    padding: 10px 16px !important;
+    font-size: 14px !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .app-file-drop-root .mobile-new-note-btn {
+    display: none !important;
+  }
 }

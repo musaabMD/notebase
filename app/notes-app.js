@@ -651,6 +651,22 @@ const RestoreIcon = ({ size = 18 }) => (
   </svg>
 );
 
+const PlusIcon = ({ size = 20 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    aria-hidden
+  >
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
+
 /** Stub AI transforms; replace with API calls later. Pushes prior version to `contentHistory` before apply. */
 function stubAIResult(note, cmdId) {
   const t = note.title;
@@ -1931,6 +1947,16 @@ export default function NotesApp() {
                     </div>
                   ) : null}
                 </div>
+                {isNotesSection && (
+                  <a
+                    href="/new-note"
+                    className="mobile-new-note-btn"
+                    style={s.mobileNewNoteBtn}
+                    aria-label="Create new note"
+                  >
+                    <PlusIcon size={20} />
+                  </a>
+                )}
               </header>
 
               <main style={s.main}>
@@ -2944,8 +2970,22 @@ function NoteCard({
     if (!open || showMdPreview || !textareaRef.current) return;
     const el = textareaRef.current;
     el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
+    const newHeight = Math.max(100, el.scrollHeight);
+    el.style.height = `${newHeight}px`;
   }, [open, draftContent, showMdPreview]);
+
+  useEffect(() => {
+    if (!open || showMdPreview) return;
+    const handleResize = () => {
+      if (!textareaRef.current) return;
+      const el = textareaRef.current;
+      el.style.height = "auto";
+      const newHeight = Math.max(100, el.scrollHeight);
+      el.style.height = `${newHeight}px`;
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [open, showMdPreview]);
 
   const onTitleChange = (e) => {
     const v = e.target.value;
@@ -2965,7 +3005,7 @@ function NoteCard({
       if (textareaEl) {
         requestAnimationFrame(() => {
           textareaEl.style.height = "auto";
-          textareaEl.style.height = `${textareaEl.scrollHeight}px`;
+          textareaEl.style.height = `${Math.max(100, textareaEl.scrollHeight)}px`;
         });
       }
       if (contentTimerRef.current) clearTimeout(contentTimerRef.current);
@@ -3597,7 +3637,7 @@ const s = {
 
   header: {
     display: "grid",
-    gridTemplateColumns: "44px minmax(0, 1fr)",
+    gridTemplateColumns: "44px minmax(0, 1fr) 44px",
     alignItems: "center",
     padding: "16px 16px 12px",
     gap: 8,
@@ -3675,6 +3715,20 @@ const s = {
   appSectionMenuItemActive: {
     background: "var(--note-sidebar-pill-hover-bg)",
     fontWeight: 600,
+  },
+  mobileNewNoteBtn: {
+    width: 44,
+    height: 44,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    border: "none",
+    background: "var(--note-accent)",
+    color: "var(--note-on-accent)",
+    cursor: "pointer",
+    textDecoration: "none",
+    flexShrink: 0,
   },
 
   sidebarSectionHint: {
@@ -3870,11 +3924,13 @@ const s = {
     lineHeight: 1.65,
     background: "transparent",
     fontFamily: "inherit",
-    overflow: "hidden",
+    overflowY: "hidden",
     minHeight: 100,
+    height: "auto",
     unicodeBidi: "plaintext",
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
+    flexGrow: 1,
   },
 
   mdModeToggle: {
