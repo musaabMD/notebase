@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { paginationOptsValidator } from "convex/server";
 
 const attachmentIn = v.object({
   id: v.string(),
@@ -33,18 +34,26 @@ async function hydrateAttachments(
   );
 }
 
-/** All notes, newest `createdAt` first. Subscribers get live updates. */
+const DEFAULT_PAGE_SIZE = 50;
+
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
-    const rows = await ctx.db.query("notes").collect();
-    rows.sort((a, b) => b.createdAt - a.createdAt);
-    return Promise.all(
-      rows.map(async (n) => ({
+  args: { paginationOpts: v.optional(paginationOptsValidator) },
+  handler: async (ctx, args) => {
+    const paginationOpts = args.paginationOpts ?? { numItems: DEFAULT_PAGE_SIZE, cursor: null };
+    const result = await ctx.db
+      .query("notes")
+      .withIndex("by_createdAt")
+      .order("desc")
+      .paginate(paginationOpts);
+
+    const hydrated = await Promise.all(
+      result.page.map(async (n) => ({
         ...n,
         attachments: await hydrateAttachments(ctx, n.attachments),
       }))
     );
+
+    return { ...result, page: hydrated };
   },
 });
 
@@ -60,21 +69,27 @@ export const get = query({
   },
 });
 
-/** Same as `list` but scoped to one tag (e.g. sidebar notebook). */
 export const listByTag = query({
-  args: { tag: v.string() },
-  handler: async (ctx, { tag }) => {
-    const rows = await ctx.db
+  args: {
+    tag: v.string(),
+    paginationOpts: v.optional(paginationOptsValidator),
+  },
+  handler: async (ctx, args) => {
+    const paginationOpts = args.paginationOpts ?? { numItems: DEFAULT_PAGE_SIZE, cursor: null };
+    const result = await ctx.db
       .query("notes")
-      .withIndex("by_tag_and_createdAt", (q) => q.eq("tag", tag))
-      .collect();
-    rows.sort((a, b) => b.createdAt - a.createdAt);
-    return Promise.all(
-      rows.map(async (n) => ({
+      .withIndex("by_tag_and_createdAt", (q) => q.eq("tag", args.tag))
+      .order("desc")
+      .paginate(paginationOpts);
+
+    const hydrated = await Promise.all(
+      result.page.map(async (n) => ({
         ...n,
         attachments: await hydrateAttachments(ctx, n.attachments),
       }))
     );
+
+    return { ...result, page: hydrated };
   },
 });
 

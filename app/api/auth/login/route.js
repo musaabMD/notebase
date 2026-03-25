@@ -8,7 +8,47 @@ import {
 
 export const dynamic = "force-dynamic";
 
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const RATE_LIMIT_MAX_ATTEMPTS = 5;
+
+function getClientIp(request) {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0].trim();
+  const realIp = request.headers.get("x-real-ip");
+  if (realIp) return realIp;
+  return "unknown";
+}
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(ip, { attempts: 1, windowStart: now });
+    return { allowed: true, remaining: RATE_LIMIT_MAX_ATTEMPTS - 1 };
+  }
+
+  if (entry.attempts >= RATE_LIMIT_MAX_ATTEMPTS) {
+    const waitMs = RATE_LIMIT_WINDOW_MS - (now - entry.windowStart);
+    return { allowed: false, retryAfter: Math.ceil(waitMs / 1000) };
+  }
+
+  entry.attempts++;
+  return { allowed: true, remaining: RATE_LIMIT_MAX_ATTEMPTS - entry.attempts };
+}
+
 export async function POST(request) {
+  const ip = getClientIp(request);
+  const rateLimit = checkRateLimit(ip);
+
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: `Too many attempts. Try again in ${rateLimit.retryAfter} seconds.` },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfter) } }
+    );
+  }
+
   const expected = process.env.NOTES_ACCESS_PASSWORD?.trim();
   const secret = process.env.NOTES_GATE_SECRET?.trim();
 

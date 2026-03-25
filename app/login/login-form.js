@@ -27,9 +27,13 @@ export function LoginForm() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(
-          typeof data.error === "string" ? data.error : "Could not sign in"
-        );
+        const errorMsg =
+          typeof data.error === "string"
+            ? data.error
+            : res.status === 429
+              ? "Too many failed attempts. Please wait before trying again."
+              : "Could not sign in";
+        setError(errorMsg);
         setBusy(false);
         return;
       }

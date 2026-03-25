@@ -5,6 +5,7 @@ import {
   useRef,
   useEffect,
   useLayoutEffect,
+  useInsertionEffect,
   useCallback,
   useMemo,
 } from "react";
@@ -24,6 +25,7 @@ import {
 import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useConvexDeploymentUrl } from "./convex-client-provider";
@@ -2747,6 +2749,100 @@ export default function NotesApp() {
   );
 }
 
+/**
+ * Pick the best string for a Markdown note. ChatGPT puts full text in `text/plain`
+ * but some browsers also expose a short or empty `text/markdown` — taking MIME first
+ * used to wipe the real content.
+ */
+function getClipboardBestTextPlain(data) {
+  if (!data) return "";
+  const plain = data.getData("text/plain") || "";
+  const md =
+    data.getData("text/markdown") ||
+    data.getData("text/x-markdown") ||
+    "";
+  const pt = plain.trim();
+  const mt = md.trim();
+  if (!mt) return plain;
+  if (!pt) return md;
+  return pt.length >= mt.length ? plain : md;
+}
+
+/** Strip invisible chars / odd newlines ChatGPT and browsers often add. */
+function normalizePastedNoteText(s) {
+  return (s || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\u2028|\u2029/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "");
+}
+
+/**
+ * When `text/plain` is empty, ChatGPT still puts HTML on the clipboard.
+ * Add newlines at block boundaries before innerText so lists/tables aren’t one line.
+ */
+function blockAwarePlainFromHtml(html) {
+  if (!html?.trim()) return "";
+  try {
+    const stripped = html
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "");
+    const withBreaks = stripped
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|h[1-6]|div|blockquote|pre|tr|li)\s*>/gi, "\n");
+    const doc = new DOMParser().parseFromString(withBreaks, "text/html");
+    return normalizePastedNoteText(doc.body?.innerText || "");
+  } catch {
+    return "";
+  }
+}
+
+/** GFM tables need a blank line before the first `|` row; AI output often omits it. */
+function normalizeMarkdownForPreviewParse(s) {
+  if (!s) return s;
+  let t = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  t = t.replace(/([^\n])\n(?=\s*\|[^|\n]+\|)/g, "$1\n\n");
+  return t;
+}
+
+/** True when clipboard plain text is likely Markdown (ChatGPT/Claude/etc.). */
+function clipboardLooksLikeMarkdown(plain) {
+  const s = plain || "";
+  if (!s.trim()) return false;
+  if (/(^|\n)#{1,6}\s/.test(s)) return true;
+  if (/(^|\n)#{1,6}[^\s#]/.test(s)) return true;
+  if (/(^|\n)(?:[*+-]|\d+\.\s)/.test(s)) return true;
+  if (/\[[^\]\n]+\]\[[^\]\n]*\]/.test(s)) return true;
+  if (/\[[^\]\n]+\]\([^)\n]+\)/.test(s)) return true;
+  if (/(^|\n)\[[^\]\n]+\]:\s+https?:\/\//m.test(s)) return true;
+  if (/\n\|[^\n]+\|\n\|[-:\s|]+\|/.test(s)) return true;
+  if (/(^|\n)\|[^\n]+\|[^\n]+\|/.test(s)) return true;
+  if (/(^|\n)>\s/.test(s)) return true;
+  if (/(^|\n)---\s*(\n|$)/.test(s)) return true;
+  if (/(^|\n)```/.test(s)) return true;
+  if (/\*\*[^*\n][^*]{0,800}\*\*/.test(s)) return true;
+  return false;
+}
+
+/** Collapsed note row: strip obvious Markdown so the one-line snippet is readable. */
+function plainSnippetFromNoteBody(s) {
+  return (s || "")
+    .replace(/^\[[^\]]+\]:\s+\S.*$/gm, " ")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*/g, "")
+    .replace(/`/g, "")
+    .replace(/\[[^\]]+\]\[[^\]]*\]/g, (m) => {
+      const inner = /^\[([^\]]+)\]/.exec(m);
+      return inner ? inner[1] : m;
+    })
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\|/g, " ")
+    .replace(/\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /* ─── NoteCard ──────────────────────────────────── */
 function NoteCard({
   note,
@@ -2767,7 +2863,9 @@ function NoteCard({
   const latestContentRef = useRef(note.content ?? "");
   const titleTimerRef = useRef(null);
   const contentTimerRef = useRef(null);
-  const [showMdPreview, setShowMdPreview] = useState(false);
+  const [userToggledPreview, setUserToggledPreview] = useState(false);
+
+  const showMdPreview = open && draftContent.length >= 100 && clipboardLooksLikeMarkdown(draftContent) && userToggledPreview;
 
   const flushTitle = useCallback(() => {
     if (titleTimerRef.current) {
@@ -2790,7 +2888,7 @@ function NoteCard({
     flushContent();
   }, [flushTitle, flushContent]);
 
-  useLayoutEffect(() => {
+  useInsertionEffect(() => {
     if (!open) {
       if (titleTimerRef.current) {
         clearTimeout(titleTimerRef.current);
@@ -2800,15 +2898,16 @@ function NoteCard({
         clearTimeout(contentTimerRef.current);
         contentTimerRef.current = null;
       }
-      setShowMdPreview(false);
       return;
     }
-    setDraftTitle(note.title);
-    setDraftContent(note.content ?? "");
-    latestTitleRef.current = note.title;
-    latestContentRef.current = note.content ?? "";
-    setShowMdPreview(false);
-  }, [open, note.id]);
+    const newTitle = note.title;
+    const newContent = note.content ?? "";
+    latestTitleRef.current = newTitle;
+    latestContentRef.current = newContent;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentionally syncing draft state when card opens
+    setDraftTitle(newTitle);
+    setDraftContent(newContent);
+  }, [open, note.id, note.title, note.content]);
 
   useEffect(() => {
     return () => {
@@ -2889,28 +2988,49 @@ function NoteCard({
       onAddAttachments(files);
       return;
     }
-    const html = e.clipboardData?.getData("text/html");
-    const plain = e.clipboardData?.getData("text/plain") || "";
-    if (!html?.trim()) return;
-    const plainNl = (plain.match(/\n/g) || []).length;
-    if (plainNl >= 6) return;
-    try {
-      const doc = new DOMParser().parseFromString(html, "text/html");
-      const fromHtml = (doc.body?.innerText || "")
-        .replace(/\r\n/g, "\n")
-        .replace(/\u00a0/g, " ");
-      if (!fromHtml.trim()) return;
-      const htmlNl = (fromHtml.match(/\n/g) || []).length;
-      if (htmlNl <= plainNl && fromHtml.length < plain.length * 1.05) return;
+    const data = e.clipboardData;
+    const ta = e.currentTarget;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const liveValue = ta.value;
+    const htmlClip = data?.getData("text/html") || "";
+
+    const raw = getClipboardBestTextPlain(data);
+    let text = normalizePastedNoteText(raw);
+    if (!text.trim() && htmlClip.trim()) {
+      text = blockAwarePlainFromHtml(htmlClip);
+    }
+
+    if (process.env.NODE_ENV === "development" && data) {
+      try {
+        const types = Array.from(data.types || []);
+        console.debug("[NoteApp paste]", {
+          types,
+          plainLen: (data.getData("text/plain") || "").length,
+          mdLen: (data.getData("text/markdown") || "").length,
+          htmlLen: htmlClip.length,
+          chosenLen: text.length,
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (text.trim().length > 0) {
       e.preventDefault();
-      const ta = e.currentTarget;
-      const start = ta.selectionStart;
-      const end = ta.selectionEnd;
-      const before = draftContent.slice(0, start);
-      const after = draftContent.slice(end);
-      scheduleBodyUpdate(before + fromHtml + after, ta);
-    } catch {
-      /* browser default paste */
+      const before = liveValue.slice(0, start);
+      const after = liveValue.slice(end);
+      const merged = before + text + after;
+      scheduleBodyUpdate(merged, ta);
+      setTimeout(() => {
+        ta.focus();
+        const pos = start + text.length;
+        ta.setSelectionRange(pos, pos);
+      }, 0);
+      if (clipboardLooksLikeMarkdown(text)) {
+        setUserToggledPreview(true);
+      }
+      return;
     }
   };
 
@@ -2960,13 +3080,7 @@ function NoteCard({
             )}
             {showClassicSnippet && (
               <span style={s.cardSnippet} dir="auto">
-                {hl(
-                  note.content
-                    .replace(/\n/g, " ")
-                    .replace(/\s+/g, " ")
-                    .trim(),
-                  searchQ
-                )}
+                {hl(plainSnippetFromNoteBody(note.content), searchQ)}
               </span>
             )}
           </div>
@@ -3106,7 +3220,7 @@ function NoteCard({
                 onClick={(e) => {
                   e.stopPropagation();
                   flushContent();
-                  setShowMdPreview(false);
+                  setUserToggledPreview(false);
                 }}
               >
                 Edit
@@ -3122,7 +3236,7 @@ function NoteCard({
                 onClick={(e) => {
                   e.stopPropagation();
                   flushContent();
-                  setShowMdPreview(true);
+                  setUserToggledPreview(true);
                 }}
               >
                 Preview
@@ -3135,8 +3249,10 @@ function NoteCard({
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 {draftContent.trim() ? (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {draftContent}
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm, remarkBreaks]}
+                  >
+                    {normalizeMarkdownForPreviewParse(draftContent)}
                   </ReactMarkdown>
                 ) : (
                   <p style={s.mdPreviewEmpty}>Nothing to preview yet.</p>
