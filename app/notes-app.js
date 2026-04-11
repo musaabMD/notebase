@@ -26,9 +26,12 @@ import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
+import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useConvexDeploymentUrl } from "./convex-client-provider";
+import { KanbanBoard } from "./components/kanban-board";
+import "./notes-app.css";
 
 const themeUi = {
   grid: {
@@ -335,43 +338,131 @@ const TrashIcon = () => (
     <path d="M9 6V4h6v2" />
   </svg>
 );
-const MenuIcon = () => (
-  <svg
-    width="22"
-    height="22"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-  >
-    <line x1="4" y1="6" x2="20" y2="6" />
-    <line x1="4" y1="12" x2="20" y2="12" />
-    <line x1="4" y1="18" x2="20" y2="18" />
-  </svg>
-);
 
-const ChevronDownIcon = ({ open }) => (
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden
-    className="app-section-chevron"
-    style={{
-      flexShrink: 0,
-      transform: open ? "rotate(-180deg)" : "none",
-      transition: "transform 0.2s ease",
-    }}
-  >
-    <path d="M6 9l6 6 6-6" />
-  </svg>
-);
+/** M88 HQ shell — accent + nav tab icons */
+const HQ_A = "#2563EB";
+const HQ_AL = "#EFF6FF";
+const HQ_AM = "#BFDBFE";
+
+const HQ_NAV = [
+  {
+    id: "projects",
+    label: "Projects",
+    icon: (a) => (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <rect
+          x="1"
+          y="1"
+          width="6"
+          height="6"
+          rx="1.2"
+          stroke={a ? HQ_A : "#94a3b8"}
+          strokeWidth="1.4"
+          fill={a ? HQ_AL : "none"}
+        />
+        <rect
+          x="9"
+          y="1"
+          width="6"
+          height="6"
+          rx="1.2"
+          stroke={a ? HQ_A : "#94a3b8"}
+          strokeWidth="1.4"
+          fill={a ? HQ_AL : "none"}
+        />
+        <rect
+          x="1"
+          y="9"
+          width="6"
+          height="6"
+          rx="1.2"
+          stroke={a ? HQ_A : "#94a3b8"}
+          strokeWidth="1.4"
+          fill={a ? HQ_AL : "none"}
+        />
+        <rect
+          x="9"
+          y="9"
+          width="6"
+          height="6"
+          rx="1.2"
+          stroke={a ? HQ_A : "#94a3b8"}
+          strokeWidth="1.4"
+          fill={a ? HQ_AL : "none"}
+        />
+      </svg>
+    ),
+  },
+  {
+    id: "tasks",
+    label: "Tasks",
+    icon: (a) => (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <rect
+          x="1"
+          y="1"
+          width="14"
+          height="14"
+          rx="2"
+          stroke={a ? HQ_A : "#94a3b8"}
+          strokeWidth="1.4"
+          fill={a ? HQ_AL : "none"}
+        />
+        <path
+          d="M4 5.5h3M4 8h3M4 10.5h3M9 5.5h3M9 8h2"
+          stroke={a ? HQ_A : "#94a3b8"}
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+  {
+    id: "debt",
+    label: "Debt",
+    icon: (a) => (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <rect
+          x="1"
+          y="3.5"
+          width="14"
+          height="9"
+          rx="1.8"
+          stroke={a ? HQ_A : "#94a3b8"}
+          strokeWidth="1.4"
+          fill={a ? HQ_AL : "none"}
+        />
+        <path d="M1 7h14" stroke={a ? HQ_A : "#94a3b8"} strokeWidth="1.4" />
+        <circle cx="4.5" cy="10" r=".9" fill={a ? HQ_A : "#94a3b8"} />
+        <circle cx="7" cy="10" r=".9" fill={a ? HQ_A : "#94a3b8"} />
+      </svg>
+    ),
+  },
+  {
+    id: "notes",
+    label: "Notes",
+    icon: (a) => (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <rect
+          x="2"
+          y="1"
+          width="12"
+          height="14"
+          rx="1.8"
+          stroke={a ? HQ_A : "#94a3b8"}
+          strokeWidth="1.4"
+          fill={a ? HQ_AL : "none"}
+        />
+        <path
+          d="M4.5 5.5h7M4.5 8h7M4.5 10.5h4"
+          stroke={a ? HQ_A : "#94a3b8"}
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+];
 
 /** Bookmark — outline style to match trash; stronger stroke when pinned. */
 const BookmarkIcon = ({ filled }) => (
@@ -434,49 +525,6 @@ function TagNavIcon({ tag }) {
         </svg>
       );
   }
-}
-
-function TrafficLights({ onRed, onYellow, onGreen }) {
-  return (
-    <div style={s.trafficRow} role="group" aria-label="Window controls">
-      <button
-        type="button"
-        className="traffic-light-hit"
-        style={s.trafficLightBtn}
-        onClick={onRed}
-        aria-label="Close"
-      >
-        <span
-          className="traffic-dot-visual"
-          style={{ ...s.trafficDot, background: "#FF5F57" }}
-        />
-      </button>
-      <button
-        type="button"
-        className="traffic-light-hit"
-        style={s.trafficLightBtn}
-        onClick={onYellow}
-        aria-label="Minimize"
-      >
-        <span
-          className="traffic-dot-visual"
-          style={{ ...s.trafficDot, background: "#FEBC2E" }}
-        />
-      </button>
-      <button
-        type="button"
-        className="traffic-light-hit"
-        style={s.trafficLightBtn}
-        onClick={onGreen}
-        aria-label="Full screen"
-      >
-        <span
-          className="traffic-dot-visual"
-          style={{ ...s.trafficDot, background: "#28C840" }}
-        />
-      </button>
-    </div>
-  );
 }
 
 function SettingsGlyph() {
@@ -715,15 +763,24 @@ function stubAIResult(note, cmdId) {
 const NOTES_STORAGE_KEY = "note-app-notes-v1";
 
 const APP_SECTION_STORAGE_KEY = "note-app-section-v1";
-const APP_SECTION_IDS = ["notes", "sites", "bookmarks"];
+const APP_SECTION_IDS = ["projects", "tasks", "debt", "notes"];
 const APP_SECTION_LABELS = {
+  projects: "Projects",
+  tasks: "Tasks",
+  debt: "Debt",
   notes: "Notes",
-  sites: "Sites",
-  bookmarks: "Bookmarks",
 };
 
 function isValidAppSection(v) {
   return typeof v === "string" && APP_SECTION_IDS.includes(v);
+}
+
+/** Map legacy section ids from older builds. */
+function migrateAppSectionId(v) {
+  if (isValidAppSection(v)) return v;
+  if (v === "sites") return "projects";
+  if (v === "bookmarks") return "tasks";
+  return "notes";
 }
 
 function parseStoredNotes(raw) {
@@ -792,15 +849,12 @@ export default function NotesApp() {
   const [voiceAiBusy, setVoiceAiBusy] = useState(false);
   const [voiceAiError, setVoiceAiError] = useState("");
   const [saveTag, setSaveTag] = useState("");
-  const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [themeId, setThemeId] = useState(DEFAULT_THEME_ID);
   const [voiceNoteModelId, setVoiceNoteModelId] = useState(
     DEFAULT_VOICE_NOTE_MODEL
   );
   const [appSection, setAppSection] = useState("notes");
-  const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
-  const sectionMenuRef = useRef(null);
   const sectionHydrated = useRef(false);
 
   const isNotesSection = appSection === "notes";
@@ -921,7 +975,8 @@ export default function NotesApp() {
     sectionHydrated.current = true;
     try {
       const stored = localStorage.getItem(APP_SECTION_STORAGE_KEY);
-      if (isValidAppSection(stored)) setAppSection(stored);
+      const next = migrateAppSectionId(stored);
+      setAppSection(next);
     } catch {
       /* noop */
     }
@@ -936,50 +991,12 @@ export default function NotesApp() {
   }, [appSection]);
 
   useEffect(() => {
-    if (!sectionMenuOpen) return;
-    const onDoc = (e) => {
-      if (sectionMenuRef.current?.contains(e.target)) return;
-      setSectionMenuOpen(false);
-    };
-    const onKey = (e) => {
-      if (e.key === "Escape") setSectionMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [sectionMenuOpen]);
-
-  const enterFullscreen = useCallback(async () => {
-    const el = document.documentElement;
-    if (document.fullscreenElement || document.webkitFullscreenElement) return;
-    try {
-      if (el.requestFullscreen) await el.requestFullscreen();
-      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-    } catch {
-      /* denied or unsupported */
-    }
-  }, []);
-
-  const exitFullscreen = useCallback(async () => {
-    try {
-      if (document.fullscreenElement) await document.exitFullscreen();
-      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-    } catch {
-      /* noop */
-    }
-  }, []);
-
-  useEffect(() => {
     const onDocDown = (e) => {
       if (showModal || settingsOpen) return;
       const el = e.target;
       if (el.closest?.(".note-card")) return;
       if (el.closest?.(".dock-search")) return;
       if (el.closest?.(".dock-fab")) return;
-      if (el.closest?.(".app-section-dropdown")) return;
       if (el.closest?.(".rec-dock")) return;
       setExpandedId(null);
     };
@@ -1795,159 +1812,181 @@ export default function NotesApp() {
       onDragOver={handleAppFileDragOver}
       onDrop={handleAppFileDrop}
     >
-      <style>{css}</style>
-
-      {menuOpen && (
-        <button
-          type="button"
-          className="sidebar-backdrop"
-          style={s.sidebarBackdrop}
-          aria-label="Close menu"
-          onClick={() => setMenuOpen(false)}
-        />
-      )}
-
       <div style={s.layout}>
-        <aside className="sidebar-desktop" style={s.sidebar}>
-          <div style={s.sidebarChrome}>
-            <TrafficLights
-              onGreen={enterFullscreen}
-              onYellow={exitFullscreen}
-              onRed={exitFullscreen}
-            />
-            <button
-              type="button"
-              style={s.sidebarGear}
-              aria-label="Settings"
-              onClick={() => setSettingsOpen(true)}
+        <div style={s.mainColumn}>
+          <div
+            className="hq-sticky-header"
+            style={{
+              position: "sticky",
+              top: 0,
+              zIndex: 200,
+              background: "color-mix(in srgb, var(--note-surface, #fff) 92%, transparent)",
+              backdropFilter: "blur(14px)",
+              borderBottom: "1px solid var(--note-border-subtle, #eef2f7)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                padding: "0 14px 0 18px",
+                minHeight: 50,
+                gap: 10,
+              }}
             >
-              <SettingsGlyph />
-            </button>
-          </div>
-          <p style={s.sidebarTitle}>
-            {isNotesSection ? "Notebooks" : APP_SECTION_LABELS[appSection]}
-          </p>
-          {isNotesSection ? (
-            <nav style={s.sidebarNavScroll}>{renderTagButtons()}</nav>
-          ) : (
-            <div style={s.sidebarSectionHint}>
-              <p style={s.sidebarSectionHintText}>
-                Choose <strong>Notes</strong> in the header to open notebooks
-                and search.
-              </p>
-            </div>
-          )}
-          <OpenRouterCredits />
-        </aside>
-
-        {menuOpen && (
-          <aside className="sidebar-drawer" style={s.sidebarDrawer}>
-            <div style={s.drawerHeader}>
-              <h2 style={s.drawerTitle}>
-                {isNotesSection ? "Notebooks" : APP_SECTION_LABELS[appSection]}
-              </h2>
-              <div style={s.drawerHeaderActions}>
-                <button
-                  type="button"
-                  style={s.sidebarGear}
-                  aria-label="Settings"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setSettingsOpen(true);
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  flexShrink: 0,
+                }}
+              >
+                <div
+                  style={{
+                    width: 26,
+                    height: 26,
+                    background: HQ_A,
+                    borderRadius: 7,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
                 >
-                  <SettingsGlyph />
-                </button>
-                <button
-                  type="button"
-                  style={s.drawerClose}
-                  onClick={() => setMenuOpen(false)}
-                  aria-label="Close menu"
-                >
-                  <CloseIcon size={14} />
-                </button>
-              </div>
-            </div>
-            {isNotesSection ? (
-              <nav style={s.sidebarNavScroll}>
-                {renderTagButtons(() => setMenuOpen(false))}
-              </nav>
-            ) : (
-              <div style={s.sidebarSectionHint}>
-                <p style={s.sidebarSectionHintText}>
-                  Choose <strong>Notes</strong> in the header to open notebooks
-                  and search.
-                </p>
-              </div>
-            )}
-            <OpenRouterCredits style={s.sidebarDrawerCredits} />
-          </aside>
-        )}
-
-        <div style={s.mainColumn}>
-          <div style={s.mainInner}>
-            <div style={s.contentRail}>
-              <header style={s.header}>
-                <button
-                  type="button"
-                  className="mobile-menu-btn"
-                  style={s.menuBtn}
-                  onClick={() => setMenuOpen(true)}
-                  aria-label="Open notebooks menu"
-                >
-                  <MenuIcon />
-                </button>
-                <div
-                  ref={sectionMenuRef}
-                  className="app-section-dropdown"
-                  style={s.appSectionWrap}
-                >
-                  <button
-                    type="button"
-                    className="app-section-trigger-hit"
-                    style={s.appSectionTrigger}
-                    aria-expanded={sectionMenuOpen}
-                    aria-haspopup="listbox"
-                    aria-label={`Switch section (current: ${APP_SECTION_LABELS[appSection]})`}
-                    onClick={() => setSectionMenuOpen((o) => !o)}
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 13 13"
+                    fill="none"
+                    aria-hidden
                   >
-                    <span className="app-section-current-label">
-                      {APP_SECTION_LABELS[appSection]}
-                    </span>
-                    <ChevronDownIcon open={sectionMenuOpen} />
-                  </button>
-                  {sectionMenuOpen ? (
-                    <div
-                      role="listbox"
-                      aria-label="App section"
-                      style={s.appSectionMenu}
-                    >
-                      {APP_SECTION_IDS.map((id) => {
-                        const active = appSection === id;
-                        return (
-                          <button
-                            key={id}
-                            type="button"
-                            role="option"
-                            aria-selected={active}
-                            className="app-section-menuitem"
-                            style={{
-                              ...s.appSectionMenuItem,
-                              ...(active ? s.appSectionMenuItemActive : {}),
-                            }}
-                            onClick={() => {
-                              setAppSection(id);
-                              setSectionMenuOpen(false);
-                            }}
-                          >
-                            {APP_SECTION_LABELS[id]}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : null}
+                    <rect x=".5" y=".5" width="5" height="5" rx="1" fill="#fff" />
+                    <rect x="7.5" y=".5" width="5" height="5" rx="1" fill="#fff" />
+                    <rect x=".5" y="7.5" width="5" height="5" rx="1" fill="#fff" />
+                    <rect x="7.5" y="7.5" width="5" height="5" rx="1" fill="#fff" />
+                  </svg>
                 </div>
-                {isNotesSection && (
+                <div>
+                  <div
+                    style={{
+                      fontWeight: 800,
+                      fontSize: 13,
+                      color: "#0f172a",
+                      letterSpacing: "-0.03em",
+                      lineHeight: 1.1,
+                    }}
+                  >
+                    M88 HQ
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 8,
+                      color: "#94a3b8",
+                      letterSpacing: "0.07em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Command Center
+                  </div>
+                </div>
+              </div>
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  display: "flex",
+                  justifyContent: "center",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    overflowX: "auto",
+                    scrollbarWidth: "none",
+                    maxWidth: "100%",
+                  }}
+                  role="tablist"
+                  aria-label="App section"
+                >
+                  {HQ_NAV.map((item) => {
+                    const on = appSection === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={on}
+                        onClick={() => {
+                          setAppSection(item.id);
+                          setSearchQ("");
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 5,
+                          padding: "8px 11px",
+                          flexShrink: 0,
+                          background: "transparent",
+                          border: "none",
+                          borderBottom: `2px solid ${on ? HQ_A : "transparent"}`,
+                          color: on ? HQ_A : "#64748b",
+                          fontSize: 12,
+                          fontWeight: on ? 700 : 400,
+                          cursor: "pointer",
+                          transition: "color 0.12s",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        {item.icon(on)}
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexShrink: 0,
+                }}
+              >
+                <button
+                  type="button"
+                  className="srch-mob-btn"
+                  onClick={() => searchRef.current?.focus()}
+                  style={{
+                    background: "none",
+                    border: "1px solid transparent",
+                    padding: 6,
+                    borderRadius: 7,
+                    cursor: "pointer",
+                    color: "#64748b",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  aria-label="Focus search"
+                >
+                  <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden>
+                    <circle
+                      cx="6.5"
+                      cy="6.5"
+                      r="4"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      fill="none"
+                    />
+                    <path
+                      d="M10 10l3 3"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+                {isNotesSection ? (
                   <a
                     href="/new-note"
                     className="mobile-new-note-btn"
@@ -1956,9 +1995,426 @@ export default function NotesApp() {
                   >
                     <PlusIcon size={20} />
                   </a>
-                )}
-              </header>
+                ) : null}
+                <button
+                  type="button"
+                  style={s.headerGear}
+                  aria-label="Settings"
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <SettingsGlyph />
+                </button>
+                <div
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: "50%",
+                    background: HQ_AL,
+                    border: `1.5px solid ${HQ_AM}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  aria-hidden
+                >
+                  <span style={{ fontSize: 11, fontWeight: 800, color: HQ_A }}>
+                    M
+                  </span>
+                </div>
+              </div>
+            </div>
+      {/* ── SEARCH BAR — below header row (all tabs) ── */}
+          <div
+            style={{
+              padding: "10px 18px 14px",
+              borderTop: "1px solid #f1f5f9",
+            }}
+          >
+      <div
+        className="dock-search"
+        style={s.searchDockWrap}
+      >
+        {atPaletteOpen && (
+          <div
+            className="at-note-palette"
+            style={s.slashPalette}
+            role="listbox"
+            aria-label="Notes"
+          >
+            <div style={s.slashPaletteHeader}>
+              <span style={s.slashPaletteHeaderIcon}>
+                <AtSignIcon size={16} />
+              </span>
+              <span style={s.slashPaletteHeaderText}>Notes</span>
+              <span style={s.slashPaletteHeaderHint}>
+                {atNoteMatches.length
+                  ? `${atNoteMatches.length} match${atNoteMatches.length === 1 ? "" : "es"}`
+                  : "No matches"}
+              </span>
+            </div>
+            <div style={s.slashPaletteList}>
+              {atNoteMatches.map((n, idx) => {
+                const active = idx === atActiveIndex;
+                return (
+                  <button
+                    key={n.id}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    style={{
+                      ...s.slashRow,
+                      ...(active ? s.slashRowActive : {}),
+                    }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setAtActiveIndex(idx)}
+                    onClick={() => pickAtNote(n)}
+                  >
+                    <span style={s.slashRowIcon}>
+                      <AtSignIcon size={17} />
+                    </span>
+                    <span style={s.slashRowBody}>
+                      <span style={s.slashRowLabel}>{n.title || "Untitled"}</span>
+                      <span style={s.slashRowHint}>
+                        {(n.content || "").replace(/\s+/g, " ").trim().slice(0, 72)}
+                        {(n.content || "").length > 72 ? "…" : ""}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {slashPaletteOpen && (
+          <div
+            className="slash-command-palette"
+            style={s.slashPalette}
+            role="listbox"
+            aria-label="AI commands"
+          >
+            <div style={s.slashPaletteHeader}>
+              <span style={s.slashPaletteHeaderIcon}>
+                <SparklesIcon size={16} />
+              </span>
+              <span style={s.slashPaletteHeaderText}>AI</span>
+              <span style={s.slashPaletteHeaderHint}>
+                {slashCommands.length
+                  ? `${slashCommands.length} command${slashCommands.length === 1 ? "" : "s"}`
+                  : "No matches"}
+              </span>
+            </div>
+            <div style={s.slashPaletteList}>
+              {slashCommands.map((cmd, idx) => {
+                const active = idx === slashActiveIndex;
+                return (
+                  <button
+                    key={cmd.id}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    style={{
+                      ...s.slashRow,
+                      ...(active ? s.slashRowActive : {}),
+                    }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setSlashActiveIndex(idx)}
+                    onClick={() => pickSlashCommand(cmd)}
+                  >
+                    <span style={s.slashRowIcon}>
+                      <SparklesIcon size={17} />
+                    </span>
+                    <span style={s.slashRowBody}>
+                      <span style={s.slashRowLabel}>{cmd.label}</span>
+                      <span style={s.slashRowHint}>{cmd.hint}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {hashPaletteOpen && (
+          <div
+            className="hash-tag-palette"
+            style={s.slashPalette}
+            role="listbox"
+            aria-label="Notebook tags"
+          >
+            <div style={s.slashPaletteHeader}>
+              <span style={s.slashPaletteHeaderIcon}>
+                <HashIcon size={16} />
+              </span>
+              <span style={s.slashPaletteHeaderText}>Tags</span>
+              <span style={s.slashPaletteHeaderHint}>
+                {hashTagMatches.length
+                  ? `${hashTagMatches.length} match${hashTagMatches.length === 1 ? "" : "es"}`
+                  : "No matches"}
+              </span>
+            </div>
+            <div style={s.slashPaletteList}>
+              {hashTagMatches.map((t, idx) => {
+                const active = idx === hashActiveIndex;
+                const count =
+                  t === "all"
+                    ? notes.length
+                    : t === "images"
+                      ? notes.filter((n) =>
+                          (n.attachments ?? []).some((a) => a.kind === "image")
+                        ).length
+                      : t === "files"
+                        ? notes.filter((n) =>
+                            (n.attachments ?? []).some((a) => a.kind === "file")
+                          ).length
+                        : notes.filter(
+                            (n) => (n.tag || "").toLowerCase() === t
+                          ).length;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    style={{
+                      ...s.slashRow,
+                      ...(active ? s.slashRowActive : {}),
+                    }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setHashActiveIndex(idx)}
+                    onClick={() => pickHashTag(t)}
+                  >
+                    <span style={s.slashRowIcon}>
+                      <TagNavIcon tag={t} />
+                    </span>
+                    <span style={s.slashRowBody}>
+                      <span style={s.slashRowLabel}>
+                        {sidebarTagMenuLabel(t)}
+                      </span>
+                      <span style={s.slashRowHint}>
+                        {count > 0
+                          ? `${count} note${count === 1 ? "" : "s"}`
+                          : "No notes"}
+                        {activeTag === t ? " · current filter" : ""}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <div
+          style={{
+            ...s.searchBar,
+            borderWidth: 1.5,
+            borderStyle: "solid",
+            borderColor: searchFocus
+              ? "var(--note-text)"
+              : "var(--note-border)",
+            boxShadow: searchFocus
+              ? "var(--note-search-focus-ring)"
+              : "var(--note-search-shadow)",
+          }}
+        >
+          <SearchIcon active={searchFocus} />
+          {aiTargetNoteId &&
+            (() => {
+              const tn = notes.find((n) => n.id === aiTargetNoteId);
+              if (!tn) return null;
+              const label = tn.title?.trim() || "Untitled";
+              const short =
+                label.length > 24 ? `${label.slice(0, 22)}…` : label;
+              return (
+                <span style={s.aiTargetChip} title={`AI target: ${label}`}>
+                  <span style={s.aiTargetChipIcon}>
+                    <AtSignIcon size={14} />
+                  </span>
+                  <span style={s.aiTargetChipLabel}>{short}</span>
+                  <button
+                    type="button"
+                    style={s.aiTargetChipClear}
+                    aria-label="Clear AI note target"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setAiTargetNoteId(null);
+                      setAiFeedback("");
+                    }}
+                  >
+                    <CloseIcon size={10} />
+                  </button>
+                </span>
+              );
+            })()}
+          <input
+            ref={searchRef}
+            style={s.searchInput}
+            dir="auto"
+            suppressHydrationWarning
+            placeholder="Search…"
+            value={searchQ}
+            onChange={(e) => setSearchQ(e.target.value)}
+            onFocus={() => {
+              setSearchFocus(true);
+              setExpandedId(null);
+            }}
+            onBlur={() => setSearchFocus(false)}
+            onKeyDown={(e) => {
+              if (atPaletteOpen) {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setSearchQ("");
+                  setAtActiveIndex(0);
+                  return;
+                }
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  if (!atNoteMatches.length) return;
+                  setAtActiveIndex((i) =>
+                    i + 1 >= atNoteMatches.length ? 0 : i + 1
+                  );
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  if (!atNoteMatches.length) return;
+                  setAtActiveIndex((i) =>
+                    i - 1 < 0 ? atNoteMatches.length - 1 : i - 1
+                  );
+                  return;
+                }
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const picked = atNoteMatches[atActiveIndex];
+                  if (picked) pickAtNote(picked);
+                  return;
+                }
+              }
+              if (slashPaletteOpen) {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setSearchQ("");
+                  setSlashActiveIndex(0);
+                  return;
+                }
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  if (!slashCommands.length) return;
+                  setSlashActiveIndex((i) =>
+                    i + 1 >= slashCommands.length ? 0 : i + 1
+                  );
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  if (!slashCommands.length) return;
+                  setSlashActiveIndex((i) =>
+                    i - 1 < 0 ? slashCommands.length - 1 : i - 1
+                  );
+                  return;
+                }
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const cmd = slashCommands[slashActiveIndex];
+                  if (cmd) pickSlashCommand(cmd);
+                  return;
+                }
+              }
+              if (hashPaletteOpen) {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setSearchQ("");
+                  setHashActiveIndex(0);
+                  return;
+                }
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  if (!hashTagMatches.length) return;
+                  setHashActiveIndex((i) =>
+                    i + 1 >= hashTagMatches.length ? 0 : i + 1
+                  );
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  if (!hashTagMatches.length) return;
+                  setHashActiveIndex((i) =>
+                    i - 1 < 0 ? hashTagMatches.length - 1 : i - 1
+                  );
+                  return;
+                }
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const picked = hashTagMatches[hashActiveIndex];
+                  if (picked != null) pickHashTag(picked);
+                  return;
+                }
+              }
+              if (e.key !== "Enter") return;
+              if (!searchQ.trim()) return;
+              if (searchQ.startsWith("#")) {
+                if (createNoteFromHashSyntax(searchQ)) e.preventDefault();
+                return;
+              }
+              if (searchQ.startsWith("/") || searchQ.startsWith("@")) return;
+              e.preventDefault();
+              createNoteFromText(searchQ);
+            }}
+          />
+          {searchQ.trim() && !commandPaletteOpen && (
+            <button
+              type="button"
+              className="search-add-hover"
+              style={s.searchAddBtn}
+              onClick={() => {
+                if (!createNoteFromHashSyntax(searchQ))
+                  createNoteFromText(searchQ);
+              }}
+            >
+              Add note
+            </button>
+          )}
+          {searchQ ? (
+            <button
+              type="button"
+              style={s.clearBtn}
+              onClick={() => {
+                setSearchQ("");
+                setSlashActiveIndex(0);
+                setAtActiveIndex(0);
+                setHashActiveIndex(0);
+                setAiTargetNoteId(null);
+                setAiFeedback("");
+              }}
+            >
+              <CloseIcon size={12} />
+            </button>
+          ) : (
+            <kbd style={s.kbd}>⌘K</kbd>
+          )}
+          {searchQ && !commandPaletteOpen && visible.length > 0 && (
+            <span style={s.badge}>{visible.length}</span>
+          )}
+        </div>
+        {aiFeedback ? (
+          <p style={s.aiFeedback} role="status">
+            {aiFeedback}
+          </p>
+        ) : null}
+      </div>
 
+          </div>
+
+          </div>
+          <div style={s.mainInner}>
+            <div style={s.contentRail}>
+              {isNotesSection ? (
+                <nav
+                  className="notebook-strip"
+                  style={s.notebookStrip}
+                  aria-label="Notebooks"
+                >
+                  {renderTagButtons()}
+                </nav>
+              ) : null}
               <main style={s.main}>
                 {isNotesSection ? (
                   <>
@@ -1970,7 +2426,7 @@ export default function NotesApp() {
                             : slashPaletteOpen
                               ? "AI commands"
                               : hashPaletteOpen
-                                ? "Sidebar tags"
+                                ? "Notebook tags"
                                 : searchQ.trim()
                                   ? `No notes match your search`
                                   : activeTag === "images"
@@ -1985,7 +2441,7 @@ export default function NotesApp() {
                             : slashPaletteOpen
                               ? "Choose an action below, or keep typing to filter. Esc clears the palette."
                               : hashPaletteOpen
-                                ? "Pick a tag to match the sidebar filter — same as clicking notebooks on the left."
+                                ? "Pick a tag to match the notebook filter — same as the strip above the list."
                                 : searchQ.trim()
                                   ? "Press Enter in the search bar to save your text as a new note."
                                   : activeTag === "images"
@@ -2022,22 +2478,38 @@ export default function NotesApp() {
                       );
                     })}
                   </>
+                ) : appSection === "projects" ? (
+                  <div
+                    style={{
+                      width: "100%",
+                      maxWidth: "100%",
+                      padding: "12px 8px 48px",
+                      textAlign: "left",
+                    }}
+                  >
+                    <ProjectsEmbed />
+                  </div>
                 ) : (
-                  <div style={s.empty}>
-                    <p style={s.emptyTitle}>
-                      {appSection === "sites" ? "Sites" : "Bookmarks"}
-                    </p>
-                    <p style={s.emptySub}>
-                      {appSection === "sites"
-                        ? "Saved sites and quick links will live here."
-                        : "Saved bookmarks will live here."}{" "}
-                      Switch to Notes in the header for notebooks and search.
-                    </p>
+                  <div
+                    style={{
+                      width: "100%",
+                      maxWidth: "100%",
+                      padding: "12px 8px 48px",
+                      textAlign: "left",
+                    }}
+                  >
+                    <KanbanBoard
+                      board={appSection === "debt" ? "debt" : "tasks"}
+                      useConvexDb={useConvexDb}
+                    />
                   </div>
                 )}
 
                 <div style={{ height: 200 }} aria-hidden />
               </main>
+              {isNotesSection ? (
+                <OpenRouterCredits style={s.mainCredits} />
+              ) : null}
             </div>
           </div>
         </div>
@@ -2336,10 +2808,6 @@ export default function NotesApp() {
               <li>After an AI edit, use Restore in the note to bring back the prior version</li>
               <li>Enter in search saves a new note (when not using @, /, or #)</li>
             </ul>
-            <p style={s.settingsHint}>
-              Green traffic light enters full screen; yellow or red exits
-              (browser full screen).
-            </p>
             <div
               style={{
                 ...s.modalActions,
@@ -2373,381 +2841,7 @@ export default function NotesApp() {
         </div>
       )}
 
-      {/* ── SEARCH BAR (@ · / · # palettes) — Notes only ── */}
-      {isNotesSection ? (
-      <div
-        className="dock-search"
-        style={s.searchDockWrap}
-      >
-        {atPaletteOpen && (
-          <div
-            className="at-note-palette"
-            style={s.slashPalette}
-            role="listbox"
-            aria-label="Notes"
-          >
-            <div style={s.slashPaletteHeader}>
-              <span style={s.slashPaletteHeaderIcon}>
-                <AtSignIcon size={16} />
-              </span>
-              <span style={s.slashPaletteHeaderText}>Notes</span>
-              <span style={s.slashPaletteHeaderHint}>
-                {atNoteMatches.length
-                  ? `${atNoteMatches.length} match${atNoteMatches.length === 1 ? "" : "es"}`
-                  : "No matches"}
-              </span>
-            </div>
-            <div style={s.slashPaletteList}>
-              {atNoteMatches.map((n, idx) => {
-                const active = idx === atActiveIndex;
-                return (
-                  <button
-                    key={n.id}
-                    type="button"
-                    role="option"
-                    aria-selected={active}
-                    style={{
-                      ...s.slashRow,
-                      ...(active ? s.slashRowActive : {}),
-                    }}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onMouseEnter={() => setAtActiveIndex(idx)}
-                    onClick={() => pickAtNote(n)}
-                  >
-                    <span style={s.slashRowIcon}>
-                      <AtSignIcon size={17} />
-                    </span>
-                    <span style={s.slashRowBody}>
-                      <span style={s.slashRowLabel}>{n.title || "Untitled"}</span>
-                      <span style={s.slashRowHint}>
-                        {(n.content || "").replace(/\s+/g, " ").trim().slice(0, 72)}
-                        {(n.content || "").length > 72 ? "…" : ""}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        {slashPaletteOpen && (
-          <div
-            className="slash-command-palette"
-            style={s.slashPalette}
-            role="listbox"
-            aria-label="AI commands"
-          >
-            <div style={s.slashPaletteHeader}>
-              <span style={s.slashPaletteHeaderIcon}>
-                <SparklesIcon size={16} />
-              </span>
-              <span style={s.slashPaletteHeaderText}>AI</span>
-              <span style={s.slashPaletteHeaderHint}>
-                {slashCommands.length
-                  ? `${slashCommands.length} command${slashCommands.length === 1 ? "" : "s"}`
-                  : "No matches"}
-              </span>
-            </div>
-            <div style={s.slashPaletteList}>
-              {slashCommands.map((cmd, idx) => {
-                const active = idx === slashActiveIndex;
-                return (
-                  <button
-                    key={cmd.id}
-                    type="button"
-                    role="option"
-                    aria-selected={active}
-                    style={{
-                      ...s.slashRow,
-                      ...(active ? s.slashRowActive : {}),
-                    }}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onMouseEnter={() => setSlashActiveIndex(idx)}
-                    onClick={() => pickSlashCommand(cmd)}
-                  >
-                    <span style={s.slashRowIcon}>
-                      <SparklesIcon size={17} />
-                    </span>
-                    <span style={s.slashRowBody}>
-                      <span style={s.slashRowLabel}>{cmd.label}</span>
-                      <span style={s.slashRowHint}>{cmd.hint}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        {hashPaletteOpen && (
-          <div
-            className="hash-tag-palette"
-            style={s.slashPalette}
-            role="listbox"
-            aria-label="Sidebar tags"
-          >
-            <div style={s.slashPaletteHeader}>
-              <span style={s.slashPaletteHeaderIcon}>
-                <HashIcon size={16} />
-              </span>
-              <span style={s.slashPaletteHeaderText}>Tags</span>
-              <span style={s.slashPaletteHeaderHint}>
-                {hashTagMatches.length
-                  ? `${hashTagMatches.length} match${hashTagMatches.length === 1 ? "" : "es"}`
-                  : "No matches"}
-              </span>
-            </div>
-            <div style={s.slashPaletteList}>
-              {hashTagMatches.map((t, idx) => {
-                const active = idx === hashActiveIndex;
-                const count =
-                  t === "all"
-                    ? notes.length
-                    : t === "images"
-                      ? notes.filter((n) =>
-                          (n.attachments ?? []).some((a) => a.kind === "image")
-                        ).length
-                      : t === "files"
-                        ? notes.filter((n) =>
-                            (n.attachments ?? []).some((a) => a.kind === "file")
-                          ).length
-                        : notes.filter(
-                            (n) => (n.tag || "").toLowerCase() === t
-                          ).length;
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    role="option"
-                    aria-selected={active}
-                    style={{
-                      ...s.slashRow,
-                      ...(active ? s.slashRowActive : {}),
-                    }}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onMouseEnter={() => setHashActiveIndex(idx)}
-                    onClick={() => pickHashTag(t)}
-                  >
-                    <span style={s.slashRowIcon}>
-                      <TagNavIcon tag={t} />
-                    </span>
-                    <span style={s.slashRowBody}>
-                      <span style={s.slashRowLabel}>
-                        {sidebarTagMenuLabel(t)}
-                      </span>
-                      <span style={s.slashRowHint}>
-                        {count > 0
-                          ? `${count} note${count === 1 ? "" : "s"}`
-                          : "No notes"}
-                        {activeTag === t ? " · current filter" : ""}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        <div
-          style={{
-            ...s.searchBar,
-            borderWidth: 1.5,
-            borderStyle: "solid",
-            borderColor: searchFocus
-              ? "var(--note-text)"
-              : "var(--note-border)",
-            boxShadow: searchFocus
-              ? "var(--note-search-focus-ring)"
-              : "var(--note-search-shadow)",
-          }}
-        >
-          <SearchIcon active={searchFocus} />
-          {aiTargetNoteId &&
-            (() => {
-              const tn = notes.find((n) => n.id === aiTargetNoteId);
-              if (!tn) return null;
-              const label = tn.title?.trim() || "Untitled";
-              const short =
-                label.length > 24 ? `${label.slice(0, 22)}…` : label;
-              return (
-                <span style={s.aiTargetChip} title={`AI target: ${label}`}>
-                  <span style={s.aiTargetChipIcon}>
-                    <AtSignIcon size={14} />
-                  </span>
-                  <span style={s.aiTargetChipLabel}>{short}</span>
-                  <button
-                    type="button"
-                    style={s.aiTargetChipClear}
-                    aria-label="Clear AI note target"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      setAiTargetNoteId(null);
-                      setAiFeedback("");
-                    }}
-                  >
-                    <CloseIcon size={10} />
-                  </button>
-                </span>
-              );
-            })()}
-          <input
-            ref={searchRef}
-            style={s.searchInput}
-            dir="auto"
-            suppressHydrationWarning
-            placeholder="Search…"
-            value={searchQ}
-            onChange={(e) => setSearchQ(e.target.value)}
-            onFocus={() => {
-              setSearchFocus(true);
-              setExpandedId(null);
-            }}
-            onBlur={() => setSearchFocus(false)}
-            onKeyDown={(e) => {
-              if (atPaletteOpen) {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setSearchQ("");
-                  setAtActiveIndex(0);
-                  return;
-                }
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  if (!atNoteMatches.length) return;
-                  setAtActiveIndex((i) =>
-                    i + 1 >= atNoteMatches.length ? 0 : i + 1
-                  );
-                  return;
-                }
-                if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  if (!atNoteMatches.length) return;
-                  setAtActiveIndex((i) =>
-                    i - 1 < 0 ? atNoteMatches.length - 1 : i - 1
-                  );
-                  return;
-                }
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  const picked = atNoteMatches[atActiveIndex];
-                  if (picked) pickAtNote(picked);
-                  return;
-                }
-              }
-              if (slashPaletteOpen) {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setSearchQ("");
-                  setSlashActiveIndex(0);
-                  return;
-                }
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  if (!slashCommands.length) return;
-                  setSlashActiveIndex((i) =>
-                    i + 1 >= slashCommands.length ? 0 : i + 1
-                  );
-                  return;
-                }
-                if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  if (!slashCommands.length) return;
-                  setSlashActiveIndex((i) =>
-                    i - 1 < 0 ? slashCommands.length - 1 : i - 1
-                  );
-                  return;
-                }
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  const cmd = slashCommands[slashActiveIndex];
-                  if (cmd) pickSlashCommand(cmd);
-                  return;
-                }
-              }
-              if (hashPaletteOpen) {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setSearchQ("");
-                  setHashActiveIndex(0);
-                  return;
-                }
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  if (!hashTagMatches.length) return;
-                  setHashActiveIndex((i) =>
-                    i + 1 >= hashTagMatches.length ? 0 : i + 1
-                  );
-                  return;
-                }
-                if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  if (!hashTagMatches.length) return;
-                  setHashActiveIndex((i) =>
-                    i - 1 < 0 ? hashTagMatches.length - 1 : i - 1
-                  );
-                  return;
-                }
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  const picked = hashTagMatches[hashActiveIndex];
-                  if (picked != null) pickHashTag(picked);
-                  return;
-                }
-              }
-              if (e.key !== "Enter") return;
-              if (!searchQ.trim()) return;
-              if (searchQ.startsWith("#")) {
-                if (createNoteFromHashSyntax(searchQ)) e.preventDefault();
-                return;
-              }
-              if (searchQ.startsWith("/") || searchQ.startsWith("@")) return;
-              e.preventDefault();
-              createNoteFromText(searchQ);
-            }}
-          />
-          {searchQ.trim() && !commandPaletteOpen && (
-            <button
-              type="button"
-              className="search-add-hover"
-              style={s.searchAddBtn}
-              onClick={() => {
-                if (!createNoteFromHashSyntax(searchQ))
-                  createNoteFromText(searchQ);
-              }}
-            >
-              Add note
-            </button>
-          )}
-          {searchQ ? (
-            <button
-              type="button"
-              style={s.clearBtn}
-              onClick={() => {
-                setSearchQ("");
-                setSlashActiveIndex(0);
-                setAtActiveIndex(0);
-                setHashActiveIndex(0);
-                setAiTargetNoteId(null);
-                setAiFeedback("");
-              }}
-            >
-              <CloseIcon size={12} />
-            </button>
-          ) : (
-            <kbd style={s.kbd}>⌘K</kbd>
-          )}
-          {searchQ && !commandPaletteOpen && visible.length > 0 && (
-            <span style={s.badge}>{visible.length}</span>
-          )}
-        </div>
-        {aiFeedback ? (
-          <p style={s.aiFeedback} role="status">
-            {aiFeedback}
-          </p>
-        ) : null}
-      </div>
-      ) : null}
-
-      {/* ── FAB — Notes only ── */}
+            {/* ── FAB — Notes only ── */}
       {isNotesSection ? (
       <button
         type="button"
@@ -3436,30 +3530,6 @@ const s = {
     borderBottomStyle: "solid",
     borderBottomColor: "var(--note-sidebar-chrome-border)",
   },
-  trafficRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 2,
-  },
-  trafficLightBtn: {
-    border: "none",
-    background: "transparent",
-    padding: 4,
-    margin: 0,
-    cursor: "pointer",
-    borderRadius: 999,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    lineHeight: 0,
-  },
-  trafficDot: {
-    width: 11,
-    height: 11,
-    borderRadius: "50%",
-    flexShrink: 0,
-    pointerEvents: "none",
-  },
   sidebarGear: {
     width: 36,
     height: 36,
@@ -3626,13 +3696,52 @@ const s = {
     minHeight: 0,
   },
 
-  /** Same width as fixed search bar (see `.dock-search` in CSS). */
+  /** Main scroll column (search lives in sticky header). */
   contentRail: {
     width: "100%",
     flex: 1,
     display: "flex",
     flexDirection: "column",
     minHeight: 0,
+  },
+
+  notebookStrip: {
+    display: "flex",
+    flexDirection: "row",
+    flexWrap: "nowrap",
+    gap: 4,
+    overflowX: "auto",
+    scrollbarWidth: "none",
+    paddingBottom: 12,
+    marginBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomStyle: "solid",
+    borderBottomColor: "var(--note-border-subtle)",
+    flexShrink: 0,
+  },
+
+  mainCredits: {
+    marginTop: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
+    flexShrink: 0,
+  },
+
+  headerGear: {
+    width: 36,
+    height: 36,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--note-border-subtle)",
+    background: "var(--note-surface-muted)",
+    cursor: "pointer",
+    color: "var(--note-text-secondary)",
+    padding: 0,
+    flexShrink: 0,
   },
 
   header: {
@@ -4366,14 +4475,14 @@ const s = {
     fontFamily: "inherit",
   },
 
-  /* search */
+  /* search (in-page header row; not bottom-fixed) */
   searchDockWrap: {
-    position: "fixed",
-    /* bottom + safe area: globals.css (.dock-search) — avoids hydration mismatch */
-    left: "50%",
-    transform: "translateX(-50%)",
-    width: "calc(100vw - 40px)",
-    zIndex: 600,
+    position: "relative",
+    left: "auto",
+    transform: "none",
+    width: "100%",
+    maxWidth: "100%",
+    zIndex: 1,
     display: "flex",
     flexDirection: "column",
     gap: 8,
@@ -4674,171 +4783,11 @@ const OpenRouterCredits = dynamic(
   },
 );
 
-const css = `
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    min-height: 100%;
-    min-height: 100dvh;
-    background: var(--note-page-bg) !important;
-  }
-  ::-webkit-scrollbar { width: 0; height: 0; }
-
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes expandDown {
-    from { opacity: 0; transform: translateY(-6px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes slideUp {
-    from { opacity: 0; transform: translateY(12px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes modalIn {
-    from { opacity: 0; transform: scale(0.97) translateY(6px); }
-    to   { opacity: 1; transform: scale(1) translateY(0); }
-  }
-  @keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.2; }
-  }
-  @keyframes fabPulse {
-    0%, 100% { box-shadow: 0 6px 24px rgba(180,35,24,0.35); }
-    50% { box-shadow: 0 8px 28px rgba(180,35,24,0.45), 0 0 0 8px rgba(180,35,24,0.08); }
-  }
-
-  .sidebar-desktop { display: flex; flex-direction: column; }
-  .mobile-menu-btn { display: none !important; }
-
-  .sidebar-pill:hover { background: var(--note-sidebar-pill-hover-bg) !important; }
-  .sidebar-credits-pill:hover { background: var(--note-sidebar-pill-hover-bg) !important; }
-  .note-card:hover { border-color: var(--note-card-hover-border) !important; }
-  .inline-tag:hover { filter: brightness(0.96); }
-  .app-section-menuitem:hover {
-    background: var(--note-sidebar-pill-hover-bg);
-  }
-  .app-section-trigger-hit:hover {
-    background: var(--note-sidebar-pill-hover-bg);
-  }
-  /* ChatGPT-style: bold visible title + muted chevron (label must not collapse in grid). */
-  .app-section-current-label {
-    font-size: 1.375rem !important;
-    font-weight: 700 !important;
-    letter-spacing: -0.03em !important;
-    color: var(--note-text) !important;
-    line-height: 1.2 !important;
-    white-space: nowrap !important;
-    flex-shrink: 0 !important;
-  }
-  .app-section-chevron {
-    color: var(--note-text-tertiary) !important;
-    opacity: 0.85 !important;
-  }
-  .app-section-trigger-hit {
-    -webkit-appearance: none !important;
-    appearance: none !important;
-  }
-  .search-add-hover:hover { filter: brightness(0.95); }
-  .pin-btn:hover {
-    color: var(--note-pin-active) !important;
-    background: var(--note-pin-hover-bg) !important;
-    border-color: var(--note-pin-hover-border) !important;
-  }
-
-  @media (max-width: 768px) {
-    .sidebar-desktop { display: none !important; }
-    .mobile-menu-btn { display: flex !important; }
-  }
-
-  /* Search was viewport-centered; notes live in the column right of the 272px sidebar. */
-  @media (min-width: 769px) {
-    .dock-search {
-      left: calc(50vw + 136px) !important;
-      width: calc(100vw - 272px - 32px) !important;
-    }
-  }
-
-  .note-drop-zone { transition: box-shadow 0.15s, background 0.15s; border-radius: 0 0 12px 12px; }
-  .note-drop-zone--active {
-    box-shadow: inset 0 0 0 2px var(--note-accent) !important;
-    background: var(--note-accent-soft) !important;
-  }
-
-  @media (max-width: 560px) {
-    .dock-search { width: calc(100vw - 24px) !important; max-width: none !important; }
-  }
-  .del-btn:hover {
-    color: var(--note-del-hover-color) !important;
-    border-color: var(--note-del-hover-border) !important;
-    background: var(--note-del-hover-bg) !important;
-  }
-  .restore-btn:hover {
-    color: var(--note-text) !important;
-    background: var(--note-surface-muted) !important;
-  }
-  .fab:hover { transform: scale(1.03) !important; }
-  .fab:active { transform: scale(0.98) !important; }
-  .stop-btn:hover { background: var(--note-stop-hover) !important; }
-
-  button:focus-visible { outline: 2px solid var(--note-focus-ring); outline-offset: 2px; }
-  button:disabled { opacity: 0.55; cursor: not-allowed; }
-  input::placeholder, textarea::placeholder { color: var(--note-text-muted); }
-
-  /* Markdown preview (react-markdown) — matches pasted ChatGPT-style content */
-  .note-md-preview { overflow-x: auto; }
-  .note-md-preview > *:first-child { margin-top: 0 !important; }
-  .note-md-preview > *:last-child { margin-bottom: 0 !important; }
-  .note-md-preview h1 { font-size: 1.35rem; font-weight: 700; margin: 1em 0 0.5em; letter-spacing: -0.02em; }
-  .note-md-preview h2 { font-size: 1.2rem; font-weight: 700; margin: 1em 0 0.45em; letter-spacing: -0.02em; }
-  .note-md-preview h3 { font-size: 1.08rem; font-weight: 650; margin: 0.9em 0 0.4em; }
-  .note-md-preview h4, .note-md-preview h5, .note-md-preview h6 { font-size: 1rem; font-weight: 650; margin: 0.75em 0 0.35em; }
-  .note-md-preview p { margin: 0 0 0.65em; }
-  .note-md-preview ul, .note-md-preview ol { margin: 0 0 0.65em; padding-left: 1.35em; }
-  .note-md-preview li { margin: 0.25em 0; }
-  .note-md-preview li > p { margin: 0.2em 0; }
-  .note-md-preview blockquote {
-    margin: 0.65em 0;
-    padding-left: 1em;
-    border-left: 3px solid var(--note-border-strong, #ccc);
-    color: var(--note-text-secondary);
-  }
-  .note-md-preview hr { border: none; border-top: 1px solid var(--note-border); margin: 1em 0; }
-  .note-md-preview code {
-    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 0.9em;
-    padding: 0.12em 0.35em;
-    border-radius: 4px;
-    background: var(--note-surface-muted);
-  }
-  .note-md-preview pre {
-    margin: 0.65em 0;
-    padding: 12px 14px;
-    border-radius: 10px;
-    background: var(--note-surface-muted);
-    border: 1px solid var(--note-border-subtle);
-    overflow-x: auto;
-    font-size: 0.88em;
-    line-height: 1.5;
-  }
-  .note-md-preview pre code { padding: 0; background: none; border-radius: 0; }
-  .note-md-preview table {
-    border-collapse: collapse;
-    width: 100%;
-    margin: 0.75em 0;
-    font-size: 0.92em;
-  }
-  .note-md-preview th, .note-md-preview td {
-    border: 1px solid var(--note-border);
-    padding: 8px 10px;
-    text-align: left;
-  }
-  .note-md-preview th { background: var(--note-surface-muted); font-weight: 600; }
-  .note-md-preview a { color: var(--note-accent); text-decoration: underline; text-underline-offset: 2px; }
-  .note-md-preview strong { font-weight: 700; }
-
-  .traffic-light-hit:hover .traffic-dot-visual { filter: brightness(1.12); }
-`;
+const ProjectsEmbed = dynamic(() => import("./projects/projects-embed"), {
+  ssr: false,
+  loading: () => (
+    <p style={{ margin: 0, fontSize: 14, color: "var(--note-text-secondary)" }}>
+      Loading Vercel projects…
+    </p>
+  ),
+});

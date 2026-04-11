@@ -95,23 +95,21 @@ a {
 
 /* ── Dock / FAB / recording card: safe-area in CSS file only (not in page.js <style>),
     so SSR and client render the same inline + embedded style text — fixes hydration. ── */
-.app-file-drop-root .dock-search {
-  bottom: calc(22px + env(safe-area-inset-bottom, 0px)) !important;
-}
+/* Search bar is in the sticky header (not bottom-fixed). */
 .app-file-drop-root .fab.dock-fab {
-  bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important;
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px)) !important;
   right: calc(20px + env(safe-area-inset-right, 0px)) !important;
 }
 .app-file-drop-root .rec-dock {
-  bottom: calc(100px + env(safe-area-inset-bottom, 0px)) !important;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px)) !important;
   right: calc(20px + env(safe-area-inset-right, 0px)) !important;
 }
 @media (max-width: 560px) {
   .app-file-drop-root .fab.dock-fab {
-    bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important;
+    bottom: calc(22px + env(safe-area-inset-bottom, 0px)) !important;
   }
   .app-file-drop-root .rec-dock {
-    bottom: calc(172px + env(safe-area-inset-bottom, 0px)) !important;
+    bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
 
@@ -135,12 +133,6 @@ a {
   }
   .app-file-drop-root .mobile-new-note-btn {
     display: flex !important;
-  }
-  .app-file-drop-root .mobile-menu-btn {
-    display: flex !important;
-  }
-  .app-file-drop-root .dock-search {
-    padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)) !important;
   }
   .app-file-drop-root .search-add-hover {
     padding: 10px 16px !important;

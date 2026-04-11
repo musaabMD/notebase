@@ -29,4 +29,14 @@ export default defineSchema({
   })
     .index("by_createdAt", ["createdAt"])
     .index("by_tag_and_createdAt", ["tag", "createdAt"]),
+
+  /** Trello-style cards for Tasks and Debt HQ sections. */
+  kanbanCards: defineTable({
+    board: v.union(v.literal("tasks"), v.literal("debt")),
+    columnKey: v.string(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    order: v.number(),
+    createdAt: v.number(),
+  }).index("by_board", ["board"]),
 });
